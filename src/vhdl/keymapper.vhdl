@@ -94,7 +94,7 @@ architecture behavioural of keymapper is
 
   signal ps2_restore : std_logic := '1';
   signal widget_restore : std_logic := '1';
-  signal ps2_capslock : std_logic := '0';
+  signal ps2_capslock : std_logic := '1';
   signal widget_capslock : std_logic := '1';
   signal resetbutton_state : std_logic := 'Z';
   signal matrix_offset : integer range 0 to 255 := 252;
@@ -160,16 +160,16 @@ begin  -- behavioural
       reset <= reset_drive;
 
       if joy_enable='1' then
-        phyjoy1(0) <= fa_left;
-        phyjoy1(1) <= fa_right;
-        phyjoy1(2) <= fa_up;
-        phyjoy1(3) <= fa_down;
+        phyjoy1(0) <= fa_up;
+        phyjoy1(1) <= fa_down;
+        phyjoy1(2) <= fa_left;
+        phyjoy1(3) <= fa_right;
         phyjoy1(4) <= fa_fire;
       
-        phyjoy2(0) <= fb_left;
-        phyjoy2(1) <= fb_right;
-        phyjoy2(2) <= fb_up;
-        phyjoy2(3) <= fb_down;
+        phyjoy2(0) <= fb_up;
+        phyjoy2(1) <= fb_down;
+        phyjoy2(2) <= fb_left;
+        phyjoy2(3) <= fb_right;
         phyjoy2(4) <= fb_fire;
       else
         phyjoy1 <= (others =>'1');
@@ -178,14 +178,15 @@ begin  -- behavioural
       
       keyboard_column8_select_out <= keyboard_column8_select_in;
       if widget_enable='1' and ps2_enable='1' then
-        capslock_out <= capslock_in and (widget_capslock xor ps2_capslock);
+        capslock_out <= capslock_in and widget_capslock and ps2_capslock;
       elsif ps2_enable='1' then
-        capslock_out <= capslock_in xor ps2_capslock;
+        capslock_out <= capslock_in and ps2_capslock;
       elsif widget_enable='1' then
         capslock_out <= capslock_in and widget_capslock;
       else
         capslock_out <= capslock_in;
       end if;
+      capslock_out <= capslock_in;
 
       -- Debug problems with restore and capslock
       key_debug_out(0) <= capslock_in;

@@ -616,7 +616,7 @@ begin
     speed_gate => speed_gate,
     speed_gate_enable => speed_gate_enable,
 
-    capslock_in => capslock_key,
+    capslock_in => '1', --capslock_key,
     capslock_out => capslock_from_keymapper,
     keyboard_column8_select_out => keyboard_column8_out,
     keyboard_column8_select_in => keyboard_column8_select,
