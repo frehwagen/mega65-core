@@ -236,7 +236,7 @@ architecture behavioural of sdcardio is
                       ReadSector,ReadingSector,ReadingSectorAckByte,DoneReadingSector,
                       FDCReadingSector,
                       WriteSector,WritingSector,WritingSectorAckByte,
-                      HyperTrapRead,HyperTrapRead2,HyperTrapWrite,
+                      HyperTrapRead,HyperTrapRead2,HyperTrapWrite, HyperTrapWrite2,
                       F011WriteSector,DoneWritingSector);
   signal sd_state : sd_state_t := Idle;
 
@@ -1758,6 +1758,16 @@ begin  -- behavioural
 
         when HyperTrapRead2 =>
 
+          if sectorbuffercs='1' and fastio_write='1' then
+            -- Writing via memory mapped sector buffer
+            
+            f011_buffer_write_address <=
+              f011sd_buffer_select&fastio_addr(8 downto 0);  
+            f011_buffer_wdata <= fastio_wdata;
+            f011_buffer_write <= '1';
+            
+          end if;
+
           if hypervisor_mode='0' then
             -- Hypervisor done, init transfer of data to f011 buffer
             sd_state <= DoneReadingSector;
@@ -1765,9 +1775,19 @@ begin  -- behavioural
           end if;
 
         when HyperTrapWrite =>
-          hyper_trap_f011_write <= '1';
           if hypervisor_mode='1' then
-            sd_state <= Idle;
+            sd_state <= HyperTrapWrite2;
+            hyper_trap_f011_write <= '0';
+          else
+            hyper_trap_f011_write <= '1';
+          end if;
+
+        when HyperTrapWrite2 =>
+
+          if hypervisor_mode='0' then
+            -- Hypervisor done, init transfer of data to f011 buffer
+            sd_state <= DoneWritingSector;
+            read_data_byte <= '0';
           end if;
 
         when ReadSector =>
