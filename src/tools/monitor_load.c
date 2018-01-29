@@ -570,8 +570,8 @@ int process_line(char *line,int live)
 	    }
 	  }
           // fetch buffer from M65 memory
-          sdbuf_request_addr = 0xFFD6000;
-          slow_write(fd,"Mffd6000\r",9);	    
+          sdbuf_request_addr = 0xFFD6c00;
+          slow_write(fd,"Mffd6c00\r",9);	    
 
 	  /* signal done/result */
           //stop_cpu();
@@ -588,10 +588,10 @@ int process_line(char *line,int live)
   
 	int i;
 	for(i=0;i<16;i++)
-	    sd_sector_buf[sdbuf_request_addr-0xFFD6000+i]=b[i];
+	    sd_sector_buf[sdbuf_request_addr-0xFFD6c00+i]=b[i];
         sdbuf_request_addr += 16;
 
-        if(sdbuf_request_addr == 0xFFD6200) {
+        if(sdbuf_request_addr == 0xFFD6e00) {
     
           char cmd[1024];
 
@@ -1216,7 +1216,7 @@ int main(int argc,char **argv)
           
             if( sdbuf_request_addr != 0) {
             
-	            slow_write(fd,"Mffd6000\r",9);
+	            slow_write(fd,"Mffd6c00\r",9);
             } else {
 	            slow_write(fd,"mffd3077\r",9);
             }

@@ -1762,7 +1762,7 @@ begin  -- behavioural
             -- Writing via memory mapped sector buffer
             
             f011_buffer_write_address <=
-              f011sd_buffer_select&fastio_addr(8 downto 0);  
+              "11"&f011sd_buffer_select&fastio_addr(8 downto 0);  
             f011_buffer_wdata <= fastio_wdata;
             f011_buffer_write <= '1';
             
