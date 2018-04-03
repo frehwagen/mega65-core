@@ -54,8 +54,8 @@ elif [ -e /opt/Xilinx/14.7/ISE_DS/settings32.sh ]; then
   . /opt/Xilinx/14.7/ISE_DS/settings32.sh
 else
   echo "Cannot detect a Xilinx installation"
-  echo C:\Xilinx\14.7\ISE_DS\settings64.bat
-  C:\Xilinx\14.7\ISE_DS\settings64.bat
+  echo /cygdrive/c/Xilinx/14.7/ISE_DS/settings64.bat
+  /cygdrive/c/Xilinx/14.7/ISE_DS/settings64.bat
   #exit 0;
 fi
 echo "PATH = $PATH"
