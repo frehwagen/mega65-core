@@ -124,7 +124,8 @@ if [ $TASK == xst ]; then
     echo "==> $datetime Starting: xst, see ${TARGET}.syr"
     echo xst ${ISE_COMMON_OPTS} -ifn "isework/${TARGETNAME}.xst" -ofn "isework/${TARGETNAME}.syr"
     xst ${ISE_COMMON_OPTS} -ifn "isework/${TARGETNAME}.xst" -ofn "isework/${TARGETNAME}.syr" > $outfile1
-    exit $?
+    echo $?
+	exit $?
 fi
 
 if [ "$TASK" == "ngdbuild" ];
@@ -154,8 +155,8 @@ if [ $TASK == par ]; then
     # ISE: place and route
     #
     echo "==> $datetime Starting: par, see ${TARGET}.par"
-    rm  ./isework/${TARGETNAME}_map.ncd
-    ln -s ${TARGETNAME}.mapncd  ./isework/${TARGETNAME}_map.ncd 
+    rm  -f ./isework/${TARGETNAME}_map.ncd
+    cp ./isework/${TARGETNAME}.mapncd  ./isework/${TARGETNAME}_map.ncd 
     par ${ISE_COMMON_OPTS} ${ISE_PAR_OPTS} ./isework/${TARGETNAME}_map.ncd ./isework/${TARGETNAME}.ncd ./isework/${TARGETNAME}.pcf > $outfile4
     exit $?
 fi
