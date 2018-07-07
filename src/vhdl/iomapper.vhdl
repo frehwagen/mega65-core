@@ -65,6 +65,8 @@ entity iomapper is
         key_scancode_toggle : in std_logic;
 
         visual_keyboard_enable : out std_logic;
+        zoom_en_osk : inout std_logic;
+        zoom_en_always : inout std_logic;
         keyboard_at_top : out std_logic;
         alternate_keyboard : out std_logic;
         osk_x : out unsigned(11 downto 0) := (others => '0');
@@ -74,6 +76,9 @@ entity iomapper is
         osk_key3 : out unsigned(7 downto 0);
         osk_key4 : out unsigned(7 downto 0);
 
+        touch_key1 : in unsigned(7 downto 0);
+        touch_key2 : in unsigned(7 downto 0);
+        
         reg_isr_out : out unsigned(7 downto 0);
         imask_ta_out : out std_logic;
 
@@ -163,12 +168,27 @@ entity iomapper is
         uart_tx : out std_logic;
 
         pixel_stream_in : in unsigned (7 downto 0);
+        pixel_red_in : in unsigned (7 downto 0);
+        pixel_green_in : in unsigned (7 downto 0);
+        pixel_blue_in : in unsigned (7 downto 0);
         pixel_y : in unsigned (11 downto 0);
         pixel_valid : in std_logic;
         pixel_newframe : in std_logic;
         pixel_newraster : in std_logic;
         pixel_x_640 : in integer;
-    
+
+        monitor_pc : in unsigned(15 downto 0);
+        monitor_opcode : in unsigned(7 downto 0);        
+        monitor_arg1 : in unsigned(7 downto 0);        
+        monitor_arg2 : in unsigned(7 downto 0);        
+        monitor_a : in unsigned(7 downto 0);        
+        monitor_b : in unsigned(7 downto 0);        
+        monitor_x : in unsigned(7 downto 0);        
+        monitor_y : in unsigned(7 downto 0);        
+        monitor_z : in unsigned(7 downto 0);        
+        monitor_sp : in unsigned(15 downto 0);        
+        monitor_p : in unsigned(7 downto 0);        
+        
     ---------------------------------------------------------------------------
     -- IO lines to the ethernet controller
     ---------------------------------------------------------------------------
@@ -182,56 +202,92 @@ entity iomapper is
     eth_rxer : in std_logic;
     eth_interrupt : in std_logic;
 
-        ----------------------------------------------------------------------
-        -- Flash RAM for holding config
-        ----------------------------------------------------------------------
-        QspiSCK : out std_logic;
-        QspiDB : inout std_logic_vector(3 downto 0);
-        QspiCSn : out std_logic;        
+    ----------------------------------------------------------------------
+    -- Flash RAM for holding config
+    ----------------------------------------------------------------------
+    QspiSCK : out std_logic;
+    QspiDB : inout std_logic_vector(3 downto 0);
+    QspiCSn : out std_logic;        
 
-        -------------------------------------------------------------------------
-        -- Lines for the SDcard interface itself
-        -------------------------------------------------------------------------
-        cs_bo : out std_logic;
-        sclk_o : out std_logic;
-        mosi_o : out std_logic;
-        miso_i : in  std_logic;
+    -------------------------------------------------------------------------
+    -- Lines for the SDcard interface itself
+    -------------------------------------------------------------------------
+    cs_bo : out std_logic;
+    sclk_o : out std_logic;
+    mosi_o : out std_logic;
+    miso_i : in  std_logic;
 
-        ---------------------------------------------------------------------------
-        -- Lines for other devices that we handle here
-        ---------------------------------------------------------------------------
-        aclMISO : in std_logic;
-        aclMOSI : out std_logic;
-        aclSS : out std_logic;
-        aclSCK : out std_logic;
-        aclInt1 : in std_logic;
-        aclInt2 : in std_logic;
+    ---------------------------------------------------------------------------
+    -- Lines for other devices that we handle here
+    ---------------------------------------------------------------------------
+    aclMISO : in std_logic;
+    aclMOSI : out std_logic;
+    aclSS : out std_logic;
+    aclSCK : out std_logic;
+    aclInt1 : in std_logic;
+    aclInt2 : in std_logic;
+
+    -- MEMs microphones
+    micData0 : in std_logic;
+    micData1 : in std_logic;
+    micClk : out std_logic;
+    micLRSel : out std_logic;
+
+    -- PDM audio output
+    ampPWM_l : out std_logic;
+    ampPWM_r : out std_logic;
+    ampSD : out std_logic;
+
+    -- I2S audio channels
+    i2s_master_clk : out std_logic := '0';
+    i2s_master_sync : out std_logic := '0';
+    i2s_slave_clk : in std_logic := '0';
+    i2s_slave_sync : in std_logic := '0';
+    pcm_modem_clk : out std_logic := '0';
+    pcm_modem_sync_in : in std_logic := '0';
+    pcm_modem_clk_in : in std_logic := '0';
+    pcm_modem_sync : out std_logic := '0';
+    i2s_headphones_data_out : out std_logic := '0';
+    i2s_headphones_data_in : in std_logic := '0';
+    i2s_speaker_data_out : out std_logic := '0';
+    pcm_modem1_data_in : in std_logic := '0';
+    pcm_modem2_data_in : in std_logic := '0';
+    pcm_modem1_data_out : out std_logic := '0';
+    pcm_modem2_data_out : out std_logic := '0';
+    i2s_bt_data_in : in std_logic := '0';
+    i2s_bt_data_out : out std_logic := '0';
     
-        micData : in std_logic;
-        micClk : out std_logic;
-        micLRSel : out std_logic;
+    tmpSDA : inout std_logic;
+    tmpSCL : inout std_logic;
+    tmpInt : in std_logic;
+    tmpCT : in std_logic;
 
-        ampPWM : out std_logic;
-        ampPWM_l : out std_logic;
-        ampPWM_r : out std_logic;
-        ampSD : out std_logic;
-
-        tmpSDA : out std_logic;
-        tmpSCL : out std_logic;
-        tmpInt : in std_logic;
-        tmpCT : in std_logic;
+    i2c1SDA : inout std_logic;
+    i2c1SCL : inout std_logic;
+    
+    lcdpwm : inout std_logic;
+    touchSDA : inout std_logic;
+    touchSCL : inout std_logic;
+    
+    sw : in std_logic_vector(15 downto 0);
+    btn : in std_logic_vector(4 downto 0);
+    seg_led : out unsigned(31 downto 0);
+    
+    -- Touch interface
+    touch1_valid : out std_logic;
+    touch1_x : out unsigned(13 downto 0);
+    touch1_y : out unsigned(11 downto 0);
+    touch2_valid : out std_logic;
+    touch2_x : out unsigned(13 downto 0);
+    touch2_y : out unsigned(11 downto 0);
+    
+    viciii_iomode : in std_logic_vector(1 downto 0);
+    
+    kickstart_address : in std_logic_vector(13 downto 0);
         
-        sw : in std_logic_vector(15 downto 0);
-        btn : in std_logic_vector(4 downto 0);
-        seg_led : out unsigned(31 downto 0);
-
-        viciii_iomode : in std_logic_vector(1 downto 0);
-        
-        kickstart_address : in std_logic_vector(13 downto 0);
-        
-        colourram_at_dc00 : in std_logic
-               
-        );
+    colourram_at_dc00 : in std_logic
+    
+    );
 end iomapper;
 
 architecture behavioral of iomapper is
@@ -307,8 +363,10 @@ architecture behavioral of iomapper is
   signal spare_bits : unsigned(4 downto 0);
 
   signal buffer_moby_toggle : std_logic;
+  signal buffer_offset : unsigned(11 downto 0);
   signal buffer_address : unsigned(11 downto 0);
   signal buffer_rdata : unsigned(7 downto 0);
+  signal debug_vector : unsigned(31 downto 0);
 
   signal eth_keycode_toggle : std_logic;
   signal eth_keycode : unsigned(15 downto 0);
@@ -363,6 +421,20 @@ architecture behavioral of iomapper is
   signal suppress_key_retrigger : std_logic;
   signal ascii_key_event_count : unsigned(15 downto 0) := x"0000";
   
+  signal cia1_irq : std_logic;
+  signal ethernet_irq : std_logic;
+  signal uart_irq : std_logic;
+
+  signal audio_mix_reg : unsigned(7 downto 0) := x"FF";
+  signal audio_mix_write : std_logic := '0';
+  signal audio_mix_wdata : unsigned(15 downto 0) := x"FFFF";
+  signal audio_mix_rdata : unsigned(15 downto 0) := x"FFFF";
+  signal audio_loopback : unsigned(15 downto 0) := x"FFFF";
+  signal pcm_left : unsigned(15 downto 0) := x"FFFF";
+  signal pcm_right : unsigned(15 downto 0) := x"FFFF";
+
+  signal cpu_ethernet_stream : std_logic;
+  
 begin
 
   block1: block
@@ -378,6 +450,9 @@ begin
     );
   end block;
   
+  -- IRQ line is wire-anded together as if it had a pullup.
+  irq <= cia1_irq and ethernet_irq and uart_irq;
+  
   block2: block
   begin
   framepacker0: entity work.framepacker port map (
@@ -386,15 +461,36 @@ begin
     hypervisor_mode => cpu_hypervisor_mode,
     thumbnail_cs => thumbnail_cs,
 
+    video_or_cpu => cpu_ethernet_stream,
+    
+    -- Video stream for beaming via ethernet
     pixel_stream_in => pixel_stream_in,
+    pixel_red_in => pixel_red_in,
+    pixel_green_in => pixel_green_in,
+    pixel_blue_in => pixel_blue_in,
     pixel_y => pixel_y,
     pixel_valid => pixel_valid,
     pixel_newframe => pixel_newframe,
     pixel_newraster => pixel_newraster,
 
+    -- CPU status log for real-time debug
+    monitor_pc => monitor_pc,
+    monitor_opcode => monitor_opcode,
+    monitor_arg1 => monitor_arg1,
+    monitor_arg2 => monitor_arg2,
+    monitor_a => monitor_a,
+    monitor_b => monitor_b,
+    monitor_x => monitor_x,
+    monitor_y => monitor_y,
+    monitor_z => monitor_z,
+    monitor_sp => monitor_sp,
+    monitor_p => monitor_p,
+    
     buffer_moby_toggle => buffer_moby_toggle,
+    buffer_offset => buffer_offset,
     buffer_address => buffer_address,
     buffer_rdata => buffer_rdata,
+    debug_vector => debug_vector,
 
     fastio_addr => unsigned(address(19 downto 0)),
     fastio_write => w,
@@ -413,7 +509,7 @@ begin
     phi0 => phi0,
     todclock => clock50hz,
     reset => reset,
-    irq => irq,
+    irq => cia1_irq,
     reg_isr_out => reg_isr_out,
     imask_ta_out => imask_ta_out,
     cs => cia1cs,
@@ -520,7 +616,9 @@ begin
       key_up => key_up,
       uart_rx => uart_rx,
       uart_tx => uart_tx,
-      portf => pmoda,
+      portf(7) => zoom_en_osk,
+      portf(6) => zoom_en_always,
+      portf(5 downto 0) => pmoda(5 downto 0),
       porth => std_logic_vector(ascii_key_buffered),
       porth_write_strobe => ascii_key_next,
       porti => std_logic_vector(bucky_key(7 downto 0)),
@@ -591,6 +689,9 @@ begin
     key1 => unsigned(virtual_key1),
     key2 => unsigned(virtual_key2),
     key3 => unsigned(virtual_key3),
+
+    touch_key1 => touch_key1,  
+    touch_key2 => touch_key2,  
 
     keydown1 => osk_key1,
     keydown2 => osk_key2,
@@ -694,9 +795,11 @@ begin
     clock200 => clock200,
     clock => clk,
     reset => reset,
-    irq => irq,
+    irq => ethernet_irq,
     ethernet_cs => ethernet_cs,
 
+    cpu_ethernet_stream => cpu_ethernet_stream,
+    
     ---------------------------------------------------------------------------
     -- IO lines to the ethernet controller
     ---------------------------------------------------------------------------
@@ -711,9 +814,11 @@ begin
     eth_interrupt => eth_interrupt,
 
     buffer_moby_toggle => buffer_moby_toggle,
+    buffer_offset => buffer_offset,
     buffer_address => buffer_address,
     buffer_rdata => buffer_rdata,
-
+    debug_vector => debug_vector,
+    
     eth_keycode_toggle => eth_keycode_toggle,
     eth_keycode => eth_keycode,
 
@@ -729,7 +834,7 @@ begin
     clock200 => clock200,
     clock => clk,
     reset => reset,
-    irq => irq,
+    irq => uart_irq,
     buffereduart_cs => buffereduart_cs,
 
     ---------------------------------------------------------------------------
@@ -748,6 +853,52 @@ begin
     fastio_wdata => unsigned(data_i)
     );
 
+  audio0: entity work.audio_complex port map (
+    clock50mhz => clk,
+
+    audio_mix_reg => audio_mix_reg,
+    audio_mix_write => audio_mix_write,
+    audio_mix_wdata => audio_mix_wdata,
+    audio_mix_rdata => audio_mix_rdata,
+    audio_loopback => audio_loopback,
+    pcm_left => pcm_left,
+    pcm_right => pcm_right,
+
+    -- MEMS microphone inputs (2 x strings of 2)
+    micData0 => micData0,
+    micData1 => micData1,
+    micClk => micClk,
+    micLRSel => micLRSel,
+
+    leftsid_audio => leftsid_audio,
+    rightsid_audio => rightsid_audio,
+
+    -- PDM audio output for various boards
+    ampSD => ampSD,
+    ampPWM_l => ampPWM_l,
+    ampPWM_r => ampPWM_r,
+
+    -- I2S interfaces for various boards
+    i2s_master_clk => i2s_master_clk,
+    i2s_master_sync => i2s_master_sync,
+    i2s_slave_clk => i2s_slave_clk,
+    i2s_slave_sync => i2s_slave_sync,
+    pcm_modem_clk => pcm_modem_clk,
+    pcm_modem_sync => pcm_modem_sync,
+    pcm_modem_clk_in => pcm_modem_clk_in,
+    pcm_modem_sync_in => pcm_modem_sync_in,
+    i2s_headphones_data_out => i2s_headphones_data_out,
+    i2s_headphones_data_in => i2s_headphones_data_in,
+    i2s_speaker_data_out => i2s_speaker_data_out,
+    pcm_modem1_data_in => pcm_modem1_data_in,
+    pcm_modem2_data_in => pcm_modem2_data_in,
+    pcm_modem1_data_out => pcm_modem1_data_out,
+    pcm_modem2_data_out => pcm_modem2_data_out,
+    i2s_bt_data_in => i2s_bt_data_in,
+    i2s_bt_data_out => i2s_bt_data_out
+
+    );
+  
   sdcard0 : entity work.sdcardio port map (
     pixelclk => pixelclk,
     clock => clk,
@@ -807,23 +958,32 @@ begin
     aclInt1 => aclInt1,
     aclInt2 => aclInt2,
     
-    micData => micData,
-    micClk => micClk,
-    micLRSel => micLRSel,
-
-    leftsid_audio => leftsid_audio,
-    rightsid_audio => rightsid_audio,
-    
-    ampSD => ampSD,
-    ampPWM => ampPWM,
-    ampPWM_l => ampPWM_l,
-    ampPWM_r => ampPWM_r,
-    
     tmpSDA => tmpSDA,
     tmpSCL => tmpSCL,
     tmpInt => tmpInt,
     tmpCT => tmpCT,
 
+    i2c1SDA => i2c1SDA,
+    i2c1SCL => i2c1SCL,
+
+    audio_mix_reg => audio_mix_reg,
+    audio_mix_write => audio_mix_write,
+    audio_mix_wdata => audio_mix_wdata,
+    audio_mix_rdata => audio_mix_rdata,
+    audio_loopback => audio_loopback,    
+    pcm_left => pcm_left,
+    pcm_right => pcm_right,
+    
+    lcdpwm => lcdpwm,
+    touchSDA => touchSDA,
+    touchSCL => touchSCL,
+    touch1_valid => touch1_valid,
+    touch1_x => touch1_x,
+    touch1_y => touch1_y,
+    touch2_valid => touch2_valid,
+    touch2_x => touch2_x,
+    touch2_y => touch2_y,
+    
     QspiSCK => QspiSCK,
     QspiDB => QspiDB,
     QspiCSn => QspiCSn,

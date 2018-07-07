@@ -1,6 +1,6 @@
 --
 -- Written by
---    Paul Gardner-Stephen <hld@c64.org>  2013-2014
+--    Paul Gardner-Stephen <hld@c64.org>  2013-2018
 --
 -- *  This program is free software; you can redistribute it and/or modify
 -- *  it under the terms of the GNU Lesser General Public License as
@@ -57,6 +57,16 @@ entity sdcardio is
     sdcardio_cs : in std_logic;
     f011_cs : in std_logic;
 
+    -- Interface for accessing mix table via CPU
+    audio_mix_reg : out unsigned(7 downto 0) := x"FF";
+    audio_mix_write : out std_logic := '0';
+    audio_mix_wdata : out unsigned(15 downto 0) := x"FFFF";
+    audio_mix_rdata : in unsigned(15 downto 0) := x"FFFF";
+    audio_loopback : in unsigned(15 downto 0) := x"FFFF";
+    -- PCM digital audio output (to give to the mixer)
+    pcm_left : inout unsigned(15 downto 0) := x"0000";
+    pcm_right : inout unsigned(15 downto 0) := x"0000";
+          
     hypervisor_mode : in std_logic;
     hyper_trap_f011_read : out std_logic := '0';
     hyper_trap_f011_write : out std_logic := '0';
@@ -127,27 +137,31 @@ entity sdcardio is
     aclInt1 : in std_logic;
     aclInt2 : in std_logic;
 
-    -- Audio in from digital SIDs
-    leftsid_audio : in unsigned(17 downto 0);
-    rightsid_audio : in unsigned(17 downto 0);
-    
-    -- Audio output
-    ampPWM : out std_logic;
-    ampPWM_l : out std_logic;
-    ampPWM_r : out std_logic;
-    ampSD : out std_logic := '1';  -- default to amplifier on
-
-    -- Microphone
-    micData : in std_logic;
-    micClk : out std_logic;
-    micLRSel : out std_logic;
-
-    -- Temperature sensor
-    tmpSDA : out std_logic;
-    tmpSCL : out std_logic;
+    -- Temperature sensor / I2C bus 0
+    tmpSDA : inout std_logic;
+    tmpSCL : inout std_logic;
     tmpInt : in std_logic;
     tmpCT : in std_logic;
 
+    -- I2C bus 1
+    i2c1SDA : inout std_logic;
+    i2c1SCL : inout std_logic;    
+
+    -- PWM brightness control for LCD panel
+    lcdpwm : inout std_logic;
+
+    -- Touch pad I2C bus
+    touchSDA : inout std_logic;
+    touchSCL : inout std_logic;
+    -- Touch interface
+    touch1_valid : out std_logic;
+    touch1_x : out unsigned(13 downto 0);
+    touch1_y : out unsigned(11 downto 0);
+    touch2_valid : out std_logic;
+    touch2_x : out unsigned(13 downto 0);
+    touch2_y : out unsigned(11 downto 0);
+        
+    
     ----------------------------------------------------------------------
     -- Flash RAM for holding config
     ----------------------------------------------------------------------
@@ -159,6 +173,8 @@ entity sdcardio is
 end sdcardio;
 
 architecture behavioural of sdcardio is
+
+  signal audio_mix_reg_int : unsigned(7 downto 0) := x"FF";
   
   signal QspiSCKInternal : std_logic := '1';
   signal QspiCSnInternal : std_logic := '1'; 
@@ -167,42 +183,9 @@ architecture behavioural of sdcardio is
   signal aclSSinternal : std_logic := '0';
   signal aclSCKinternal : std_logic := '0';
   signal micClkinternal : std_logic := '0';
-  signal micLRSelinternal : std_logic := '0';
+--  signal micLRSelinternal : std_logic := '0';
   signal tmpSDAinternal : std_logic := '0';
   signal tmpSCLinternal : std_logic := '0';
-
-  -- Combined 10-bit left/right audio
-  signal pwm_value_new_left : unsigned(7 downto 0) := x"00";
-  signal pwm_value_new_right : unsigned(7 downto 0) := x"00";
-  signal pwm_value_combined : integer range 0 to 65535 := 0;
-  signal pwm_value_left : integer range 0 to 65535 := 0;
-  signal pwm_value_right : integer range 0 to 65535 := 0;
-  signal pwm_value_combined_hold : integer range 0 to 65535 := 0;
-  signal pwm_value_left_hold : integer range 0 to 65535 := 0;
-  signal pwm_value_right_hold : integer range 0 to 65535 := 0;
-
-  signal pdm_combined_accumulator : integer range 0 to 131071 := 0;
-  signal pdm_left_accumulator : integer range 0 to 131071 := 0;
-  signal pdm_right_accumulator : integer range 0 to 131071 := 0;
-  signal ampPWM_pdm : std_logic := '0';
-  signal ampPWM_pdm_l : std_logic := '0';
-  signal ampPWM_pdm_r : std_logic := '0';
-
-  signal pwm_counter : integer range 0 to 1024 := 0;
-  signal ampPWM_pwm : std_logic := '0';
-  signal ampPWM_pwm_l : std_logic := '0';
-  signal ampPWM_pwm_r : std_logic := '0';
-
-  signal audio_mode : std_logic := '0';
-  signal stereo_swap : std_logic := '0';
-  signal force_mono : std_logic := '0';
-  signal ampSD_internal : std_logic := '1';
-  
-  signal mic_divider : unsigned(4 downto 0) := "00000";
-  signal mic_counter : unsigned(7 downto 0) := "00000000";
-  signal mic_onecount : unsigned(7 downto 0) := "00000000";
-  signal mic_value_left : unsigned(7 downto 0) := "00000000";
-  signal mic_value_right : unsigned(7 downto 0) := "00000000";
   
   -- debounce reading from or writing to $D087 so that buffered read/write
   -- behaves itself.
@@ -229,6 +212,9 @@ architecture behavioural of sdcardio is
   signal sd_reset        : std_logic := '1';
   signal sdhc_mode : std_logic := '0';
 
+  signal sd_fill_mode    : std_logic := '0';
+  signal sd_fill_value   : unsigned(7 downto 0) := (others => '0');
+  
   -- IO mapped register to indicate if SD card interface is busy
   signal sdio_busy : std_logic := '0';
   signal sdcard_busy : std_logic := '0';
@@ -237,12 +223,20 @@ architecture behavioural of sdcardio is
 
   signal sector_buffer_mapped : std_logic := '0';
   
-  type sd_state_t is (Idle,
-                      ReadSector,ReadingSector,ReadingSectorAckByte,DoneReadingSector,
-                      FDCReadingSector,
-                      WriteSector,WritingSector,WritingSectorAckByte,
-                      HyperTrapRead,HyperTrapRead2,HyperTrapWrite,
-                      F011WriteSector,DoneWritingSector);
+  type sd_state_t is (Idle,                           -- 0x00
+                      ReadSector,                     -- 0x01
+                      ReadingSector,                  -- 0x02
+                      ReadingSectorAckByte,           -- 0x03
+                      DoneReadingSector,              -- 0x04
+                      FDCReadingSector,               -- 0x05
+                      WriteSector,                    -- 0x06
+                      WritingSector,                  -- 0x07
+                      WritingSectorAckByte,           -- 0x08
+                      HyperTrapRead,                  -- 0x09
+                      HyperTrapRead2,                 -- 0x0A
+                      HyperTrapWrite,                 -- 0x0B
+                      F011WriteSector,                -- 0x0C
+                      DoneWritingSector);             -- 0x0D
   signal sd_state : sd_state_t := Idle;
 
   -- Diagnostic register for determining SD/SDHC card state.
@@ -328,8 +322,6 @@ architecture behavioural of sdcardio is
   constant cycles_per_16khz : integer :=  (50000000/16000);
   signal busy_countdown : unsigned(15 downto 0) := x"0000";
   
-  signal audio_reflect : std_logic_vector(3 downto 0) := "0000";
-
   signal cycles_per_interval : unsigned(7 downto 0)
     := to_unsigned(100,8);
   signal fdc_read_invalidate : std_logic := '0';
@@ -363,6 +355,88 @@ architecture behavioural of sdcardio is
   
   signal packed_rdata : std_logic_vector(7 downto 0);
 
+  signal i2c_bus_id : unsigned(7 downto 0) := x"00";
+
+  signal i2c0_address : unsigned(6 downto 0) := to_unsigned(0,7);
+  signal i2c0_address_internal : unsigned(6 downto 0) := to_unsigned(0,7);
+  signal i2c0_rdata : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c0_wdata : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c0_wdata_internal : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c0_busy : std_logic := '0';
+  signal i2c0_busy_last : std_logic := '0';
+  signal i2c0_rw : std_logic := '0';
+  signal i2c0_rw_internal : std_logic := '0';
+  signal i2c0_error : std_logic := '0';  
+  signal i2c0_reset : std_logic := '1';
+  signal i2c0_reset_internal : std_logic := '1';
+  signal i2c0_command_en : std_logic := '0';  
+  signal i2c0_command_en_internal : std_logic := '0';  
+  signal i2c0_stacked_command : std_logic := '0';
+
+  signal i2c1_address : unsigned(6 downto 0) := to_unsigned(0,7);
+  signal i2c1_address_internal : unsigned(6 downto 0) := to_unsigned(0,7);
+  signal i2c1_rdata : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c1_wdata : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c1_wdata_internal : unsigned(7 downto 0) := to_unsigned(0,8);
+  signal i2c1_busy : std_logic := '0';
+  signal i2c1_busy_last : std_logic := '0';
+  signal i2c1_rw : std_logic := '0';
+  signal i2c1_rw_internal : std_logic := '0';
+  signal i2c1_error : std_logic := '0';  
+  signal i2c1_reset : std_logic := '1';
+  signal i2c1_reset_internal : std_logic := '1';
+  signal i2c1_command_en : std_logic := '0';  
+  signal i2c1_command_en_internal : std_logic := '0';  
+  signal i2c1_swap : std_logic := '0';
+  signal i2c1_debug_scl : std_logic := '0';
+  signal i2c1_debug_sda : std_logic := '0';
+  signal i2c1_stacked_command : std_logic := '0';
+
+  signal touch_enabled : std_logic := '1';
+  signal touch_enabled_internal : std_logic := '1';
+  signal touch_flip_x : std_logic := '1';
+  signal touch_flip_x_internal : std_logic := '1';
+  signal touch_flip_y : std_logic := '0';
+  signal touch_flip_y_internal : std_logic := '0';
+
+  -- Approximate touch screen calibration values based on the test panel
+  -- XXX Doesn't take account of the non-linearity in movement we see on some
+  -- areas of the screen.
+  signal touch_scale_x : unsigned(15 downto 0 ) := to_unsigned(1024,16);
+  signal touch_scale_x_internal : unsigned(15 downto 0 ) := to_unsigned(1024,16);
+  signal touch_scale_y : unsigned(15 downto 0 ) := to_unsigned(1024,16);
+  signal touch_scale_y_internal : unsigned(15 downto 0 ) := to_unsigned(1024,16);
+  signal touch_delta_x : unsigned(15 downto 0 ) := to_unsigned(62464,16);
+  signal touch_delta_x_internal : unsigned(15 downto 0 ) := to_unsigned(62464,16);
+  signal touch_delta_y : unsigned(15 downto 0 ) := to_unsigned(4096,16);
+  signal touch_delta_y_internal : unsigned(15 downto 0 ) := to_unsigned(4096,16);
+  
+  signal touch1_active : std_logic := '0';
+  signal touch1_status : std_logic_vector(1 downto 0) := "11";
+  signal touch_x1 : unsigned(9 downto 0) := to_unsigned(0,10);
+  signal touch_y1 : unsigned(9 downto 0) := to_unsigned(0,10);
+  signal touch2_active : std_logic := '0';
+  signal touch2_status : std_logic_vector(1 downto 0) := "11";
+  signal touch_x2 : unsigned(9 downto 0) := to_unsigned(0,10);
+  signal touch_y2 : unsigned(9 downto 0) := to_unsigned(0,10);
+  signal scan_count : unsigned(7 downto 0) := x"00";
+  signal b0 : unsigned(7 downto 0) := x"00";
+  signal b1 : unsigned(7 downto 0) := x"00";
+  signal b2 : unsigned(7 downto 0) := x"00";
+  signal b3 : unsigned(7 downto 0) := x"00";
+  signal b4 : unsigned(7 downto 0) := x"00";
+  signal b5 : unsigned(7 downto 0) := x"00";
+  signal touch_byte : unsigned(7 downto 0) := x"00";
+  signal touch_byte_num : unsigned(7 downto 0) := x"00";
+
+  signal lcd_pwm_divider : integer range 0 to 255 := 0;
+  signal lcd_pwm_counter : integer range 0 to 255 := 0;
+  -- Start with panel at full brightness
+  signal lcdpwm_value : unsigned(7 downto 0) := x"ff";
+
+  signal gesture_event_id : unsigned(3 downto 0) := x"0";
+  signal gesture_event : unsigned(3 downto 0) := x"0";
+
   function resolve_sector_buffer_address(f011orsd : std_logic; addr : unsigned(8 downto 0))
     return integer is
   begin
@@ -374,6 +448,76 @@ begin  -- behavioural
 --**********************************************************************
   -- SD card controller module.
   --**********************************************************************
+
+  touch0: entity work.touch
+    port map (
+      clock50mhz => clock,
+      sda => touchSDA,
+      scl => touchSCL,
+      touch_enabled => touch_enabled,
+
+      gesture_event_id => gesture_event_id,
+      gesture_event => gesture_event,
+      
+      x_invert => touch_flip_x,
+      y_invert => touch_flip_y,
+      x_mult   => touch_scale_x,
+      y_mult   => touch_scale_y,
+      x_delta  => touch_delta_x,
+      y_delta  => touch_delta_y,
+
+      scan_count => scan_count,
+      touch_byte => touch_byte,
+      touch_byte_num => touch_byte_num,
+      b0 => b0,
+      b1 => b1,
+      b2 => b2,
+      b3 => b3,
+      b4 => b4,
+      b5 => b5,
+      
+      touch1_active => touch1_active,
+      touch1_status => touch1_status,
+      x1 => touch_x1,
+      y1 => touch_y1,
+      touch2_active => touch2_active,
+      touch2_status => touch2_status,
+      x2 => touch_x2,
+      y2 => touch_y2
+      );
+  
+  i2c0: entity work.i2c_master
+    port map (
+      clk => clock,
+      reset_n => i2c0_reset,
+      ena => i2c0_command_en,
+      addr => std_logic_vector(i2c0_address),
+      rw => i2c0_rw,
+      data_wr => std_logic_vector(i2c0_wdata),
+      busy => i2c0_busy,
+      unsigned(data_rd) => i2c0_rdata,
+      ack_error => i2c0_error,
+      sda => tmpSDA,
+      scl => tmpSCL
+      );
+  
+  i2c1: entity work.i2c_master
+    port map (
+      clk => clock,
+      reset_n => i2c1_reset,
+      ena => i2c1_command_en,
+      addr => std_logic_vector(i2c1_address),
+      rw => i2c1_rw,
+      data_wr => std_logic_vector(i2c1_wdata),
+      busy => i2c1_busy,
+      unsigned(data_rd) => i2c1_rdata,
+      ack_error => i2c1_error,
+      sda => i2c1SDA,
+      scl => i2c1SCL,
+      swap => i2c1_swap,
+      debug_sda => i2c1_debug_sda,
+      debug_scl => i2c1_debug_scl
+      );
   
   sd0: entity work.sdcardctrl
     port map (
@@ -384,6 +528,8 @@ begin  -- behavioural
 
       last_state_o => last_sd_state,
       error_o => last_sd_error,
+      
+      busy_o => sdcard_busy,
       
       addr_i => std_logic_vector(sd_sector),
       sdhc_i => sdhc_mode,
@@ -418,7 +564,7 @@ begin  -- behavioural
   
   -- Locally readable copy of the same data, so that we can read it when writing
   -- to SD card or floppy drive
-  sb_workcopy: entity work.ram8x4096
+  sb_workcopy: entity work.ram8x4096_sync
     port map (
       clk => clock,
 
@@ -464,8 +610,6 @@ begin  -- behavioural
     sector_end => fdc_sector_end    
     );
   
-  
-  
   -- XXX also implement F011 floppy controller emulation.
   process (clock,fastio_addr,fastio_wdata,sector_buffer_mapped,sdio_busy,
            sd_reset,fastio_read,sd_sector,fastio_write,
@@ -478,7 +622,7 @@ begin  -- behavioural
            f011_disk2_write_protected,diskimage_sector,sw,btn,aclmiso,
            aclmosiinternal,aclssinternal,aclSCKinternal,aclint1,aclint2,
            tmpsdainternal,tmpsclinternal,tmpint,tmpct,tmpint,last_scan_code,
-           pwm_value_new_left,mic_value_left,mic_value_right,qspidb,
+           pcm_left,qspidb,
            qspicsninternal,QspiSCKInternal,
            sectorbuffercs,f011_cs,f011_led,f011_head_side,f011_drq,
            f011_lost,f011_wsector_found,f011_write_gate,f011_irq,
@@ -491,8 +635,7 @@ begin  -- behavioural
            fdc_read_request,cycles_per_interval,found_track,
            found_sector,found_side,fdc_byte_out,fdc_mfm_state,
            fdc_mfm_byte,fdc_last_gap,packed_rdata,fdc_quantised_gap,
-           fdc_bytes_read,fpga_temperature,ampsd_internal,audio_reflect,
-           stereo_swap,force_mono,audio_mode,rightsid_audio,leftsid_audio           
+           fdc_bytes_read,fpga_temperature                      
            ) is
     variable temp_cmd : unsigned(7 downto 0);
   begin
@@ -768,26 +911,131 @@ begin  -- behavioural
           when x"ae" =>
             -- @IO:GS $D6AE - DEBUG FDC bytes read counter (MSB)
             fastio_rdata <= unsigned(fdc_bytes_read(15 downto 8));
+          when x"B0" =>
+            -- @IO:GS $D6B0 - Touch pad control / status
+            -- @IO:GS $D6B0.0 - Touch event 1 is valid
+            -- @IO:GS $D6B0.1 - Touch event 2 is valid
+            -- @IO:GS $D6B0.2-3 - Touch event 1 up/down state
+            -- @IO:GS $D6B0.5-4 - Touch event 2 up/down state
+            -- @IO:GS $D6B0.6 - Invert horizontal axis
+            -- @IO:GS $D6B0.7 - Invert vertical axis
+            fastio_rdata(0) <= touch1_active;
+            fastio_rdata(1) <= touch2_active;
+            fastio_rdata(3 downto 2) <= unsigned(touch1_status);
+            fastio_rdata(5 downto 4) <= unsigned(touch2_status);
+            fastio_rdata(6) <= touch_flip_x_internal;
+            fastio_rdata(7) <= touch_flip_y_internal;
+          when x"B1" =>
+            -- @IO:GS $D6B1 - Touch pad X scaling LSB
+            fastio_rdata <= touch_scale_x_internal(7 downto 0);
+          when x"B2" =>
+            -- @IO:GS $D6B2 - Touch pad X scaling MSB
+            fastio_rdata <= touch_scale_x_internal(15 downto 8);
+          when x"B3" =>
+            -- @IO:GS $D6B3 - Touch pad Y scaling LSB
+            fastio_rdata <= touch_scale_y_internal(7 downto 0);
+          when x"B4" =>
+            -- @IO:GS $D6B4 - Touch pad Y scaling MSB
+            fastio_rdata <= touch_scale_y_internal(15 downto 8);
+          when x"B5" =>
+            -- @IO:GS $D6B5 - Touch pad X delta LSB
+            fastio_rdata <= touch_delta_x_internal(7 downto 0);
+          when x"B6" =>
+            -- @IO:GS $D6B6 - Touch pad X delta MSB
+            fastio_rdata <= touch_delta_x_internal(15 downto 8);
+          when x"B7" =>
+            -- @IO:GS $D6B7 - Touch pad Y delta LSB
+            fastio_rdata <= touch_delta_y_internal(7 downto 0);
+          when x"B8" =>
+            -- @IO:GS $D6B8 - Touch pad Y delta MSB
+            fastio_rdata <= touch_delta_y_internal(15 downto 8);
+          when x"B9" =>
+            -- @IO:GS $D6B9 - Touch pad touch #1 X LSB
+            fastio_rdata <= touch_x1(7 downto 0);
+          when x"BA" =>
+            -- @IO:GS $D6BA - Touch pad touch #1 Y LSB
+            fastio_rdata <= touch_y1(7 downto 0);
+          when x"BB" =>
+            -- @IO:GS $D6BB.0-1 - Touch pad touch #1 X MSBs
+            -- @IO:GS $D6BB.5-4 - Touch pad touch #1 Y MSBs
+            fastio_rdata(1 downto 0) <= touch_x1(9 downto 8);
+            fastio_rdata(5 downto 4) <= touch_y1(9 downto 8);
+          when x"BC" =>
+            -- @IO:GS $D6BC - Touch pad touch #2 X LSB
+            fastio_rdata <= touch_x2(7 downto 0);
+          when x"BD" =>
+            -- @IO:GS $D6BD - Touch pad touch #2 Y LSB
+            fastio_rdata <= touch_y2(7 downto 0);
+          when x"BE" =>
+            -- @IO:GS $D6BE.0-1 - Touch pad touch #2 X MSBs
+            -- @IO:GS $D6BE.5-4 - Touch pad touch #2 Y MSBs
+            fastio_rdata(1 downto 0) <= touch_x2(9 downto 8);
+            fastio_rdata(5 downto 4) <= touch_y2(9 downto 8);
+          when x"BF" =>
+            fastio_rdata(7) <= touch_enabled_internal;
+            -- XXX DEBUG temporary
+            fastio_rdata(6 downto 0) <= touch_byte(6 downto 0);
+          when x"C0" =>
+            -- @IO:GS $D6C0.0-3 - Touch pad gesture directions (left,right,up,down)
+            -- @IO:GS $D6C0.7-4 - Touch pad gesture ID
+            fastio_rdata(3 downto 0) <= gesture_event;
+            fastio_rdata(7 downto 4) <= gesture_event_id;
+          when x"D0" =>
+            -- @IO:GS $D6D0 - I2C bus select (bus 0 = temp sensor on Nexys4 boardS)
+            fastio_rdata <= i2c_bus_id;
+          when x"D1" =>
+            fastio_rdata <= (others => '0');
+            if i2c_bus_id = x"00" then
+              fastio_rdata(0) <= i2c0_reset_internal;
+              fastio_rdata(1) <= i2c0_command_en_internal;
+              fastio_rdata(2) <= i2c0_rw_internal;
+              fastio_rdata(6) <= i2c0_busy;
+              fastio_rdata(7) <= i2c0_error;
+            elsif i2c_bus_id = x"01" then
+              fastio_rdata(0) <= i2c1_reset_internal;
+              fastio_rdata(1) <= i2c1_command_en_internal;
+              fastio_rdata(2) <= i2c1_rw_internal;
+              fastio_rdata(6) <= i2c1_busy;
+              fastio_rdata(7) <= i2c1_error;
+            end if;
+          when x"D2" =>
+            fastio_rdata <= (others => '0');
+            if i2c_bus_id = x"00" then
+              fastio_rdata(7 downto 1) <= i2c0_address_internal;
+            elsif i2c_bus_id = x"01" then
+              fastio_rdata(7 downto 1) <= i2c1_address_internal;
+            end if;
+          when x"D3" =>
+            fastio_rdata <= (others => '0');
+            if i2c_bus_id = x"00" then
+              fastio_rdata <= i2c0_wdata_internal;
+            elsif i2c_bus_id = x"01" then
+              fastio_rdata <= i2c1_wdata_internal;
+            end if;
+          when x"D4" =>
+            fastio_rdata <= (others => '0');
+            if i2c_bus_id = x"00" then
+              fastio_rdata <= i2c0_rdata;
+            elsif i2c_bus_id = x"01" then
+              fastio_rdata <= i2c1_rdata;
+            end if;
           when x"da" =>
             -- @IO:GS $D6DA - DEBUG SD card last error code LSB
             fastio_rdata(7 downto 0) <= unsigned(last_sd_error(7 downto 0));
           when x"db" =>
             -- @IO:GS $D6DB - DEBUG SD card last error code MSB
             fastio_rdata(7 downto 0) <= unsigned(last_sd_error(15 downto 8));
-          when x"dc" =>
-            -- @IO:GS $D6DC - DEBUG duplicate of FPGA switches 0-7
-            fastio_rdata(7 downto 0) <= unsigned(sw(7 downto 0));
-          when x"dd" =>
-            -- @IO:GS $D6DD - DEBUG duplicate of FPGA switches 8-15
-            fastio_rdata(7 downto 0) <= unsigned(sw(15 downto 8));
           when x"DE" =>
-            -- @IO:GS $D6DE - Temperature sensor (lower byte)
+            -- @IO:GS $D6DE - FPGA die temperature sensor (lower nybl)
             fastio_rdata <= unsigned("0000"&fpga_temperature(3 downto 0));
           when x"DF" =>
-            -- @IO:GS $D6DF - Temperature sensor (upper byte)
+            -- @IO:GS $D6DF - FPGA die temperature sensor (upper byte)
             fastio_rdata <= unsigned(fpga_temperature(11 downto 4));
           -- XXX $D6Ex is decoded by ethernet controller, so don't use those
-          -- registers here!
+            -- registers here!
+          when x"F0" =>
+            -- @IO:GS $D6F0 - LCD panel brightness control
+            fastio_rdata <= lcdpwm_value;
           when x"F2" =>
             -- @IO:GS $D6F2 - Read FPGA five-way buttons
             fastio_rdata(7 downto 5) <= "000";
@@ -802,15 +1050,16 @@ begin  -- behavioural
             fastio_rdata(5) <= aclInt1;
             fastio_rdata(6) <= aclInt2;
             fastio_rdata(7) <= aclInt1 or aclInt2;
+          when x"F4" =>
+            -- @IO:GS $D6F4 - Audio Mixer register select
+            fastio_rdata <= audio_mix_reg_int;
           when x"F5" =>
-            -- @IO:GS $D6F5 Bit-bashed temperature sensor
-            fastio_rdata(0) <= tmpSDAinternal;
-            fastio_rdata(1) <= tmpSCLinternal;
-            fastio_rdata(4 downto 2) <= "000";
-            fastio_rdata(5) <= tmpInt;
-            fastio_rdata(6) <= tmpCT;
-            fastio_rdata(7) <= tmpInt or tmpCT;
-            fastio_rdata(7 downto 0) <= unsigned(fpga_temperature(11 downto 4));
+            -- @IO:GS $D6F5 - Audio Mixer register read port
+            if audio_mix_reg_int(0)='1' then
+              fastio_rdata <= audio_mix_rdata(15 downto 8);
+            else
+              fastio_rdata <= audio_mix_rdata(7 downto 0);
+            end if;
           when x"F6" =>
             -- @IO:GS $D6F6 - Keyboard scan code reader (lower byte)
             fastio_rdata <= unsigned(last_scan_code(7 downto 0));
@@ -818,30 +1067,23 @@ begin  -- behavioural
             -- @IO:GS $D6F7 - Keyboard scan code reader (upper nybl)
             fastio_rdata <= unsigned("000"&last_scan_code(12 downto 8));
           when x"F8" =>
-            -- PWM output
-            fastio_rdata <= pwm_value_new_left;
+            -- @IO:GS $D6F8 - Digital audio, left channel, LSB
+            fastio_rdata <= pcm_left(7 downto 0);
           when x"F9" =>
-            -- Debug interface to see what audio output is doing
-            fastio_rdata(0) <= ampSD_internal;
-            fastio_rdata(4 downto 1) <= unsigned(audio_reflect);
-            fastio_rdata(5) <= stereo_swap;
-            fastio_rdata(6) <= force_mono;
-            fastio_rdata(7) <= audio_mode;
+            -- @IO:GS $D6F9 - Digital audio, left channel, MSB
+            fastio_rdata <= pcm_left(15 downto 8);
           when x"FA" =>
-            -- PWM output
-            fastio_rdata <= pwm_value_new_left;
+            -- @IO:GS $D6FA - Digital audio, left channel, LSB
+            fastio_rdata <= pcm_right(7 downto 0);
           when x"FB" =>
-            -- @IO:GS $D6FB - microphone input (left)
-            fastio_rdata <= mic_value_left;
+            -- @IO:GS $D6FB - Digital audio, left channel, MSB
+            fastio_rdata <= pcm_right(15 downto 8);
           when x"FC" =>
-            -- @IO:GS $D6F7 - microphone input (right)
-            fastio_rdata <= mic_value_right;
+            -- @IO:GS $D6FC - audio LSB (source selected by $D6F4)
+            fastio_rdata <= audio_loopback(7 downto 0);
           when x"FD" =>
-            -- Right SID audio (high) for debugging
-            fastio_rdata <= rightsid_audio(17 downto 10);
-          when x"FE" =>
-            -- Right SID audio (low) for debugging            
-            fastio_rdata <= rightsid_audio(9 downto 2);
+            -- @IO:GS $D6FD - audio MSB (source selected by $D6F4)
+            fastio_rdata <= audio_loopback(15 downto 8);
           when x"FF" =>
             -- Flash interface
             fastio_rdata(3 downto 0) <= unsigned(QspiDB);
@@ -870,7 +1112,66 @@ begin  -- behavioural
     -- ==================================================================
     -- ==================================================================
     
-    if rising_edge(clock) then
+    
+    case sd_state is    
+      when WriteSector|WritingSector|WritingSectorAckByte =>
+        if f011_sector_fetch='1' then
+          f011_buffer_read_address <= "110"&f011_buffer_disk_address;
+        else
+          f011_buffer_read_address <= "111"&sd_buffer_offset;
+        end if;
+      when others =>
+        f011_buffer_read_address <= "110"&f011_buffer_cpu_address;
+    end case;
+    
+    if rising_edge(clock) then    
+
+      audio_mix_write <= '0';      
+      
+      -- Drive LCD panel PWM brightness control
+      if lcd_pwm_divider /= 255 then
+        lcd_pwm_divider <= lcd_pwm_divider + 1;
+      else
+        lcd_pwm_divider <= 0;        
+        if lcd_pwm_counter >= to_integer(lcdpwm_value) then
+          lcdpwm <= '0';
+        else
+          lcdpwm <= '1';
+        end if;
+        if lcd_pwm_counter = 255 then
+          lcd_pwm_counter <= 0;
+        else
+          lcd_pwm_counter <= lcd_pwm_counter + 1;
+        end if;
+      end if;
+      
+      -- Pass current touch events to the on-screen keyboard
+      touch1_valid <= touch1_active;
+      touch1_x(13 downto 10) <= (others => '0');
+      touch1_y(11 downto 10) <= (others => '0');
+      touch1_x(9 downto 0) <= touch_x1(9 downto 0);
+      touch1_y(9 downto 0) <= touch_y1(9 downto 0);
+      touch2_valid <= touch2_active;
+      touch2_x(13 downto 10) <= (others => '0');
+      touch2_y(11 downto 10) <= (others => '0');
+      touch2_x(9 downto 0) <= touch_x2(9 downto 0);
+      touch2_y(9 downto 0) <= touch_y2(9 downto 0);
+      
+      -- Reset I2C command enable as soon as busy flag asserts
+      i2c0_busy_last <= i2c0_busy;
+      i2c1_busy_last <= i2c1_busy;
+      if (i2c0_busy = '1' and i2c0_busy_last='0')
+        or (i2c0_busy = '1' and i2c0_busy_last='0' and i2c0_stacked_command ='1' ) then
+        i2c0_command_en <= '0';
+        i2c0_command_en_internal <= '0';
+        i2c0_stacked_command <= '0';
+      end if;
+      if (i2c1_busy = '1' and i2c1_busy_last='0')
+        or (i2c1_busy = '1' and i2c1_busy_last='0' and i2c1_stacked_command ='1' ) then
+        i2c1_command_en <= '0';
+        i2c1_command_en_internal <= '0';
+        i2c1_stacked_command <= '0';
+      end if;
 
       target_track <= f011_track;
       target_sector <= f011_sector;
@@ -909,7 +1210,6 @@ begin  -- behavioural
       -- Prepare for CPU read request via $D087 if required
       if sb_cpu_read_request='1' and sb_cpu_reading='0' then
         report "CPU read pre-fetch from sector buffer @ $" & to_hstring(f011_buffer_cpu_address);
-        f011_buffer_read_address <= "110"&f011_buffer_cpu_address;
         sb_cpu_reading <= '1';
       else
         sb_cpu_reading <= '0';
@@ -973,153 +1273,6 @@ begin  -- behavioural
           busy_countdown <= busy_countdown - 1;
           -- Stepping pulses should be short, so we clear it here
           f_step <= '1';
-        end if;
-      end if;
-            
-      -- Generate combined audio from stereo sids plus 2 8-bit digital channels
-      -- (4x14 bit values = 16 bit level)
-      pwm_value_combined <= to_integer(leftsid_audio(17 downto 4))
-                            + to_integer(rightsid_audio(17 downto 4))
-                            + to_integer("00"&pwm_value_new_left & "0000")
-                            + to_integer("00"&pwm_value_new_right & "0000");
-      -- 2x15 bit values = 16 bit levels
-      pwm_value_left <= to_integer(leftsid_audio(17 downto 3))
-                        + to_integer("00"&pwm_value_new_left &"00000");
-      pwm_value_right <= to_integer(rightsid_audio(17 downto 3))
-                         + to_integer("00"&pwm_value_new_right&"00000");
-
-      
-      -- Implement 10-bit digital combined audio output
-      audio_reflect(0) <= not audio_reflect(0);
-      -- We have three versions of audio output:
-      -- 1. Delta-Sigma (aka PDM), which should be most accurate, but requires
-      -- good low-pass output filters
-      -- 2. PWM, similar to what we used to use.
-      -- 3. Balanced PWM, where the pulse is centered in the time domain,
-      -- which apparently is "better". I have a wooden ear, so can't tell.
-
-      if audio_mode = '0' then
-        ampPWM <= ampPWM_pdm;
-        if force_mono = '1' then
-          -- Play combined audio through both left and right channels
-          ampPWM_l <= ampPWM_pdm;
-          ampPWM_r <= ampPWM_pdm;
-        elsif stereo_swap='0' then
-          -- Don't swap stereo channels
-          ampPWM_l <= ampPWM_pdm_l;
-          ampPWM_r <= ampPWM_pdm_r;
-        else
-          -- Swap stereo channels
-          ampPWM_r <= ampPWM_pdm_l;
-          ampPWM_l <= ampPWM_pdm_r;
-        end if;
-      else
-        ampPWM <= ampPWM_pwm;
-        if force_mono = '1' then
-          -- Play combined audio through both left and right channels
-          ampPWM_l <= ampPWM_pwm;
-          ampPWM_r <= ampPWM_pwm;
-        elsif stereo_swap='0' then
-          -- Don't swap stereo channels
-          ampPWM_l <= ampPWM_pwm_l;
-          ampPWM_r <= ampPWM_pwm_r;
-        else
-          -- Swap stereo channels
-          ampPWM_r <= ampPWM_pwm_l;
-          ampPWM_l <= ampPWM_pwm_r;
-        end if;
-      end if;
-      -- 40000 is to reduce range
-      if pdm_combined_accumulator < 65536 +40000 then
-        pdm_combined_accumulator <= pdm_combined_accumulator + pwm_value_combined;
-        ampPWM_pdm <= '0';
-        audio_reflect(1) <= '0';
-      else
-        pdm_combined_accumulator <= pdm_combined_accumulator + pwm_value_combined - 65536 - 40000;
-        ampPWM_pdm <= '1';
-        audio_reflect(1) <= '1';
-      end if;
-      if pdm_left_accumulator < 65536 then
-        pdm_left_accumulator <= pdm_left_accumulator + pwm_value_left;
-        ampPWM_pdm_l <= '0';
-        audio_reflect(2) <= '0';
-      else
-        pdm_left_accumulator <= pdm_left_accumulator + pwm_value_left - 65536;
-        ampPWM_pdm_l <= '1';
-        audio_reflect(2) <= '1';
-      end if;
-      if pdm_right_accumulator < 65536 then
-        pdm_right_accumulator <= pdm_right_accumulator + pwm_value_right;
-        ampPWM_pdm_r <= '0';
-        audio_reflect(3) <= '0';
-      else
-        pdm_right_accumulator <= pdm_right_accumulator + pwm_value_right - 65536;
-        ampPWM_pdm_r <= '1';
-        audio_reflect(3) <= '1';
-      end if;
-
-      -- Normal PWM
-      if pwm_counter < 1024 then
-        pwm_counter <= pwm_counter + 1;
-        if to_integer(to_unsigned(pwm_value_combined_hold,16)(15 downto 6)) = pwm_counter then
-          ampPwm_pwm <= '0';
-        end if;
-        if to_integer(to_unsigned(pwm_value_left_hold,16)(15 downto 6)) = pwm_counter then
-          ampPwm_pwm_l <= '0';
-        end if;
-        if to_integer(to_unsigned(pwm_value_right_hold,16)(15 downto 6)) = pwm_counter then
-          ampPwm_pwm_r <= '0';
-        end if;
-      else
-        pwm_counter <= 0;
-        pwm_value_combined_hold <= pwm_value_combined;
-        pwm_value_left_hold <= pwm_value_left;
-        pwm_value_right_hold <= pwm_value_right;
-        if to_integer(to_unsigned(pwm_value_combined,16)(15 downto 6)) = 0 then
-          ampPWM_pwm <= '0';
-        else
-          ampPWM_pwm <= '1';
-        end if;
-        if to_integer(to_unsigned(pwm_value_left,16)(15 downto 6)) = 0 then
-          ampPWM_pwm_l <= '0';
-        else
-          ampPWM_pwm_l <= '1';
-        end if;
-        if to_integer(to_unsigned(pwm_value_right,16)(15 downto 6)) = 0 then
-          ampPWM_pwm_r <= '0';
-        else
-          ampPWM_pwm_r <= '1';
-        end if;
-      end if;
-
-
-      -- microphone sampling process
-      -- max frequency is 3MHz. 48MHz/16 ~= 3MHz
-      if mic_divider < 16 then
-        if mic_divider < 8 then
-          micCLK <= '1';
-        else
-          micCLK <= '0';
-        end if;
-        mic_divider <= mic_divider + 1;
-      else
-        mic_divider <= (others => '0');
-        if mic_counter < 127 then
-          if micData='1' then
-            mic_onecount <= mic_onecount + 1;
-          end if;
-          mic_counter <= mic_counter + 1;
-        else
-          -- finished sampling, update output
-          if micLRSelinternal='0' then
-            mic_value_left(7 downto 0) <= mic_onecount;
-          else
-            mic_value_right(7 downto 0) <= mic_onecount;
-          end if;
-          mic_onecount <= (others => '0');
-          mic_counter <= (others => '0');
-          micLRSel <= not micLRSelinternal;
-          micLRSelinternal <= not micLRSelinternal;
         end if;
       end if;
 
@@ -1506,9 +1659,12 @@ begin  -- behavioural
                   sd_state <= Idle;
                   sd_handshake <= '1';
                   sd_handshake_internal <= '1';
+                  sd_doread <= '0';
+                  sd_dowrite <= '0';                  
                   sdio_error <= '0';
                   sdio_fsm_error <= '0';
                   sd_sector <= (others => '0');
+                  sdio_busy <= '0';
 
                 when x"10" =>
                   -- Reset SD card with flags specified
@@ -1516,6 +1672,9 @@ begin  -- behavioural
                   sd_state <= Idle;
                   sdio_error <= '0';
                   sdio_fsm_error <= '0';
+                  sd_doread <= '0';
+                  sd_dowrite <= '0';
+                  sdio_busy <= '0';
 
                 when x"01" =>
                   -- End reset
@@ -1570,7 +1729,6 @@ begin  -- behavioural
                     f011_sector_fetch <= '0';
 
                     sd_wrote_byte <= '0';
-                    f011_buffer_read_address <= "111"&"000000000";
                     sd_buffer_offset <= (others => '0');
                   end if;
 
@@ -1584,7 +1742,12 @@ begin  -- behavioural
                 when x"82" => sector_buffer_mapped<='0';
                               sdio_error <= '0';
                               sdio_fsm_error <= '0';
-
+                -- sd_fill_mode allows us to fill sector writes
+                -- with a common value instead of using data from
+                -- the sector buffer.              
+                when x"83" => sd_fill_mode <= '1';
+                when x"84" => sd_fill_mode <= '0';
+                              
                 when others =>
                   sdio_error <= '1';
               end case;
@@ -1595,6 +1758,9 @@ begin  -- behavioural
             when x"82" => sd_sector(15 downto 8) <= fastio_wdata;
             when x"83" => sd_sector(23 downto 16) <= fastio_wdata;
             when x"84" => sd_sector(31 downto 24) <= fastio_wdata;
+            when x"86" =>
+              -- @ IO:GS $D686 WRITE ONLY set fill byte for use in fill mode, instead of SD buffer data
+              sd_fill_value <= fastio_wdata;
             when x"89" => f011sd_buffer_select <= fastio_wdata(7);
                           -- @ IO:GS $D689.2 Set/read SD card sd_handshake signal
                           sd_handshake <= fastio_wdata(2);
@@ -1667,6 +1833,99 @@ begin  -- behavioural
               f011_rnf <= fastio_wdata(3);
               f011_drq <= fastio_wdata(4);
               f011_lost <= fastio_wdata(5);
+            when x"B0" =>
+              touch_flip_x <= fastio_wdata(6);
+              touch_flip_x_internal <= fastio_wdata(6);
+              touch_flip_y <= fastio_wdata(7);
+              touch_flip_y_internal <= fastio_wdata(7);
+            when x"B1" =>
+              touch_scale_x(7 downto 0) <= fastio_wdata;
+              touch_scale_x_internal(7 downto 0) <= fastio_wdata;
+            when x"B2" =>
+              touch_scale_x_internal(15 downto 8) <= fastio_wdata;
+              touch_scale_x(15 downto 8) <= fastio_wdata;
+            when x"B3" =>
+              touch_scale_y(7 downto 0) <= fastio_wdata;
+              touch_scale_y_internal(7 downto 0) <= fastio_wdata;
+            when x"B4" =>
+              touch_scale_y(15 downto 8) <= fastio_wdata;
+              touch_scale_y_internal(15 downto 8) <= fastio_wdata;
+            when x"B5" =>
+              touch_delta_x(7 downto 0) <= fastio_wdata;
+              touch_delta_x_internal(7 downto 0) <= fastio_wdata;
+            when x"B6" =>
+              touch_delta_x(15 downto 8) <= fastio_wdata;
+              touch_delta_x_internal(15 downto 8) <= fastio_wdata;
+            when x"B7" =>
+              touch_delta_y(7 downto 0) <= fastio_wdata;
+              touch_delta_y_internal(7 downto 0) <= fastio_wdata;
+            when x"B8" =>
+              touch_delta_y(15 downto 8) <= fastio_wdata;
+              touch_delta_y_internal(15 downto 8) <= fastio_wdata;
+            when x"BF" =>
+              -- @IO:GS $D6BF.7 - Enable/disable touch panel I2C communications
+              touch_enabled <= fastio_wdata(7);
+              touch_enabled_internal <= fastio_wdata(7);
+              touch_byte_num(6 downto 0) <= fastio_wdata(6 downto 0);
+            when x"D0" =>
+              i2c_bus_id <= fastio_wdata;
+            when x"D1" =>
+              -- @IO:GS $D6D1 - I2C control/status
+              -- @IO:GS $D6D1.0 - I2C reset
+              -- @IO:GS $D6D1.1 - I2C command latch write strobe (write 1 to trigger command)
+              -- @IO:GS $D6D1.2 - I2C Select read (1) or write (0)
+              
+              -- @IO:GS $D6D1.6 - I2C busy flag
+              -- @IO:GS $D6D1.7 - I2C ack error
+              if i2c_bus_id = x"00" then
+                i2c0_reset <= fastio_wdata(0);
+                i2c0_reset_internal <= fastio_wdata(0);
+                i2c0_command_en <= fastio_wdata(1);
+                if (fastio_wdata(1) and i2c0_busy) = '1' then
+                  i2c0_stacked_command <= '1';
+                end if;
+                i2c0_command_en_internal <= fastio_wdata(1);
+                i2c0_rw <= fastio_wdata(2);
+                i2c0_rw_internal <= fastio_wdata(2);
+              elsif i2c_bus_id = x"01" then
+                i2c1_reset <= fastio_wdata(0);
+                i2c1_reset_internal <= fastio_wdata(0);
+                i2c1_command_en <= fastio_wdata(1);
+                if (fastio_wdata(1) and i2c1_busy) = '1' then
+                  i2c1_stacked_command <= '1';
+                end if;
+                i2c1_command_en_internal <= fastio_wdata(1);
+                i2c1_rw <= fastio_wdata(2);
+                i2c1_rw_internal <= fastio_wdata(2);
+
+                i2c1_swap <= fastio_wdata(5);
+                i2c1_debug_scl <= fastio_wdata(6);
+                i2c1_debug_sda <= fastio_wdata(7);
+              end if;
+            when x"D2" =>
+              -- @IO:GS $D6D2.7-1 - I2C address
+              if i2c_bus_id = x"00" then
+                i2c0_address <= fastio_wdata(7 downto 1);
+                i2c0_address_internal <= fastio_wdata(7 downto 1);
+              elsif i2c_bus_id = x"01" then
+                i2c1_address <= fastio_wdata(7 downto 1);
+                i2c1_address_internal <= fastio_wdata(7 downto 1);
+              end if;
+            when x"D3" =>
+              -- @IO:GS $D6D3 - I2C data write register
+              if i2c_bus_id = x"00" then
+                i2c0_wdata <= fastio_wdata;
+                i2c0_wdata_internal <= fastio_wdata;
+              elsif i2c_bus_id = x"01" then
+                i2c1_wdata <= fastio_wdata;
+                i2c1_wdata_internal <= fastio_wdata;
+              end if;
+            when x"D4" =>
+              -- @IO:GS $D6D4 - I2C data read register
+              null;
+            when x"F0" =>
+              -- @IO:GS $D6F0 - LCD panel brightness control
+              lcdpwm_value <= fastio_wdata;
             when x"F3" =>
               -- Accelerometer
               aclMOSI         <= fastio_wdata(1);
@@ -1675,37 +1934,45 @@ begin  -- behavioural
               aclSSinternal   <= fastio_wdata(2);
               aclSCK          <= fastio_wdata(3);
               aclSCKinternal  <= fastio_wdata(3);
-
-            -- @IO:GS $D6F5 - Temperature sensor
+            when x"F4" =>
+              -- @IO:GS $D6F4 - Audio Mixer register select
+              audio_mix_reg <= fastio_wdata(7 downto 0);
+              audio_mix_reg_int <= fastio_wdata(7 downto 0);
             when x"F5" =>
-              tmpSDAinternal <= fastio_wdata(0);
-              tmpSDA         <= fastio_wdata(0);
-              tmpSCLinternal <= fastio_wdata(1);
-              tmpSCL         <= fastio_wdata(1);
-
+              -- @IO:GS $D6F5 - Audio Mixer register write port
+              -- Write to audio mixer register.
+              -- Minor complication is that the registers are 16-bits wide in
+              -- the audio mixer, so we have to write to the correct half of
+              -- the register, and then trigger the write.  But we should also
+              -- copy the other half from the read version of the register, so
+              -- that it doesn't get stomped with some old data.
+              -- This does mean that after you set the selection register, you
+              -- have to wait at least 17 clock cycles before trying to read or
+              -- write, so that the data has time to settle.
+              if audio_mix_reg_int(0)='1' then
+                report "Writing upper half of audio mixer coefficient";
+                audio_mix_wdata(15 downto 8) <= fastio_wdata;
+                audio_mix_wdata(7 downto 0) <= audio_mix_rdata(7 downto 0);
+              else
+                report "Writing lower half of audio mixer coefficient";
+                audio_mix_wdata(7 downto 0) <= fastio_wdata;
+                audio_mix_wdata(15 downto 8) <= audio_mix_rdata(15 downto 8);
+              end if;
+              audio_mix_write <= '1';
+              
             -- @IO:GS $D6F8 - 8-bit digital audio out (left)
             when x"F8" =>
               -- 8-bit digital audio out
-              pwm_value_new_left <= fastio_wdata;
-
+              pcm_left(7 downto 0) <= fastio_wdata;
             when x"F9" =>
-              -- @IO:GS $D6F9.0 - Enable audio amplifier
-              -- @IO:GS $D6F9.1-4 - Raw PCM/PDM audio debug interface WILL BE REMOVED
-              -- @IO:GS $D6F9.5 - Swap stereo channels
-              -- @IO:GS $D6F9.6 - Play mono audio through both channels
-              -- @IO:GS $D6F9.7 - Select PDM or PWM audio output mode
-              -- enable/disable audio amplifiers
-              ampSD <= fastio_wdata(0);
-              ampSD_internal <= fastio_wdata(0);
-              stereo_swap <= fastio_wdata(5);
-              force_mono <= fastio_wdata(6);
-              audio_mode <= fastio_wdata(7);
-
-            when x"FA" =>
-              -- @IO:GS $D6FA - 8-bit digital audio out (left)
               -- 8-bit digital audio out
-              pwm_value_new_right <= fastio_wdata;
-
+              pcm_left(15 downto 8) <= fastio_wdata;
+            when x"FA" =>
+              -- 8-bit digital audio out
+              pcm_right(7 downto 0) <= fastio_wdata;
+            when x"FB" =>
+              -- 8-bit digital audio out
+              pcm_right(15 downto 8) <= fastio_wdata;
             when x"FF" =>
               -- @IO:GS $D6FF - Flash bit-bashing port
               -- Flash interface
@@ -1982,7 +2249,6 @@ begin  -- behavioural
           report "Starting to write sector from unified FDC/SD buffer.";
           f011_buffer_cpu_address <= (others => '0');
           sb_cpu_read_request <= '1';
-          f011_buffer_read_address <= "110"&f011_buffer_disk_address;
           f011_buffer_disk_pointer_advance <= '1';
           -- Abort CPU buffer read if in progess, since we are reading the buffer
           sb_cpu_reading <= '0';
@@ -2008,7 +2274,11 @@ begin  -- behavioural
         when WritingSector =>
           if sd_data_ready='1' then
             sd_dowrite <= '0';
-            sd_wdata <= f011_buffer_rdata;
+            if sd_fill_mode='1' then
+              sd_wdata <= sd_fill_value;
+            else
+              sd_wdata <= f011_buffer_rdata;
+            end if;
             sd_handshake <= '1';
             sd_handshake_internal <= '1';
             
@@ -2042,12 +2312,6 @@ begin  -- behavioural
               -- Still more bytes to read.
               sd_state <= WritingSector;
 
-              -- Get next byte ready
-              if f011_sector_fetch='1' then
-                f011_buffer_read_address <= "110"&f011_buffer_disk_address;
-              else
-                f011_buffer_read_address <= "111"&sd_buffer_offset;
-              end if;
               f011_buffer_disk_pointer_advance <= '1';
               -- Abort CPU buffer read if in progess, since we are reading the buffer
               sb_cpu_reading <= '0';              

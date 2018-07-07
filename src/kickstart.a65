@@ -404,6 +404,11 @@ invalid_subfunction:
 		.include "kickstart_virtual_f011.a65"
 
 ;;; ----------------------------------------------------------------------------
+;;; Audio mixer control functions
+;;; ----------------------------------------------------------------------------
+		.include "kickstart_audiomix.a65"
+
+;;; ----------------------------------------------------------------------------
 ;;; CPU Hypervisor Entry Point on reset
 ;;; ----------------------------------------------------------------------------
 
@@ -429,7 +434,7 @@ reset_machine_state:
 		jsr enhanced_io
 
 		; clear UART interrupt status
-		lda $d60d
+		lda uart65_irq_flag
 
 		; switch to fast mode
 		; 1. C65 fast-mode enable
@@ -471,7 +476,7 @@ reset_machine_state:
 
 		; enable audio amplifier
 		lda #$01
-		sta $d6f9
+		sta audioamp_ctl
 
 		; We DO NOT need to mess with $01, because
 		; the 4510 starts up with kickstart mapped at $8000-$BFFF 
@@ -496,9 +501,9 @@ reset_machine_state:
 		lda #$6b    ; 01101011
 		sta hypervisor_feature_enables
 
-		; Map SD card sector buffer
+		; Map SD card sector buffer to SD card, not floppy drive
 		lda #$80
-		sta $d689
+		sta sd_buffer_ctrl
 
 		; Access cartridge IO area to force EXROM probe on R1 PCBs
 		; XXX DONT READ $DExx ! This is a known crash causer for Action Replay
@@ -524,6 +529,8 @@ reset_machine_state:
 ;
 reset_entry:
 		sei
+
+		jsr audiomix_setup
 
 .macro	buffereduarttest
 		; 115200 bps for both
@@ -559,12 +566,12 @@ reset_entry:
 .macro sdtest
 		; Reset SD card
 		lda #$00
-		sta $d680
+		sta sd_ctrl
 		lda #$01
-		sta $d680
+		sta sd_ctrl
 		; map sector buffer
 		lda #$81
-		sta $d680
+		sta sd_ctrl
 		; put some data in sector buffer
 		ldx #$01
 		stx $de00
@@ -576,18 +583,18 @@ reset_entry:
 		stx $de03
 		; Issue write block command
 		lda #$03
-		sta $d680
+		sta sd_ctrl
 foo:		jmp foo
 .macend
 ;		.invoke sdtest
 .macro f011test
 		; use real floppy drive
 		lda #$01
-		sta $d6a1
+		sta sd_fdc_select
 
 		; 10x MFM speed for simulation data
 		lda #$0a
-		sta $d6a2
+		sta fdc_mfm_speed
 
 		lda #$68 ; floppy motor + LED on, head side 1
 		sta $d080
@@ -672,7 +679,7 @@ bytewait:
 normalboot:
 
 	; check for ALT key to jump to utility menu
-	lda $d611
+	lda buckykey_status
 	and #$10
 	bne utility_menu
 
@@ -708,7 +715,7 @@ nokey2:
 		; put sd card sector buffer back after scanning
 		; keyboard
 		lda #$81
-		tsb $d680
+		tsb sd_ctrl
 
 		; display debug message to uart
 		;
@@ -983,11 +990,11 @@ postkickup:
 		
 		; for now indicate that there is no disk in drive
 		; (unless we notice that floppy access has been virtualised)
-		LDA	$D659
+		LDA	hypervisor_hardware_virtualisation
 		AND	#$01
 		BNE	f011Virtualised
 		lda #$00
-		sta $d68b	; f011 emulation, BG: should have an alias
+		sta sd_f011_en	; f011 emulation
 f011Virtualised:
 
 		; Go to root directory on default disk
@@ -2090,8 +2097,8 @@ go64:
 
 		; Check if hold boot switch is set (control-key)
 		;
-l41:		lda $d611
-		and #$04
+l41:		lda buckykey_status
+		and #$14
 		beq l42      ; no, so continue		
 
 		; yes, display message
@@ -2102,12 +2109,12 @@ l41:		lda $d611
 
 l41a:
 		; check for ALT key to jump to utility menu
-		lda $d611
+		lda buckykey_status
 		and #$10
 		bne utility_menu
 
 		; and otherwise wait until CTRL is released
-		lda $d611
+		lda buckykey_status
 		and #$04
 		bne l41a
 l42:
@@ -2115,7 +2122,7 @@ l42:
 		; unmap sector buffer so C64 can see CIAs
 		;
 		lda #$82
-		sta $D680
+		sta SD_CTRL
 
 		; copy routine to stack to switch to
 		; C64 memory map and enter via reset
@@ -2435,7 +2442,7 @@ checkpoint:
 	sta checkpoint_pch
 
 	; Only do checkpoints visibly if shift held during boot
-	lda $d611
+	lda buckykey_status
 	and #$03
 	beq cp9
 
@@ -2530,7 +2537,7 @@ nocheckpointmessage:
 	sta checkpoint_pch
 
 	; Only do checkpoints visibly if shift key held
-	lda $d611
+	lda buckykey_status
 	and #$03
 	beq checkpoint_return
 
@@ -2843,10 +2850,10 @@ ulvc_fail:
 	rts
 
 utillist_rewind:
-	; Set pointer to first entry in colour RAM ($0800)
-	lda #<$0800
+	; Set pointer to first entry in colour RAM ($0850)
+	lda #<$0850
 	sta <zptempv32
-	lda #>$0800
+	lda #>$0850
 	sta <zptempv32+1
 	lda #<$0FF8
 	sta <zptempv32+2

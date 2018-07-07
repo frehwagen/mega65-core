@@ -46,9 +46,11 @@ entity ethernet is
     clock50mhz : in std_logic;
     clock200 : in std_logic;
     reset : in std_logic;
-    irq : out std_logic := 'H';
+    irq : out std_logic := '1';
     ethernet_cs : in std_logic;
 
+    cpu_ethernet_stream : out std_logic := '0';
+    
     ---------------------------------------------------------------------------
     -- IO lines to the ethernet controller
     ---------------------------------------------------------------------------
@@ -75,9 +77,12 @@ entity ethernet is
     -- compressed video stream from the VIC-IV frame packer for autonomous dispatch
     ---------------------------------------------------------------------------    
     buffer_moby_toggle : in std_logic;
+    buffer_offset : in unsigned(11 downto 0);
     buffer_address : out unsigned(11 downto 0);
     buffer_rdata : in unsigned(7 downto 0);
 
+    debug_vector : in unsigned(31 downto 0);
+    
     ---------------------------------------------------------------------------
     -- keyboard event capture via ethernet
     ---------------------------------------------------------------------------    
@@ -111,7 +116,13 @@ architecture behavioural of ethernet is
    x"60", -- version and traffic class high nybl
    x"00",x"00",x"00", -- traffic class low nybl and flow label
    x"08",x"00",  -- payload length (2048 bytes)
-   x"00", -- next header (blank for now)
+   -- XXX Move to making this a valid UDP6 packet at some point.
+   -- Main problem is we need to compute the checksum over the data
+   -- before we can do this.  Not impossible, but will require modifying
+   -- the framepacker to do this as the data is collected.
+   -- It will need to do this using a seed checksum that covers the
+   -- invariant header, so it shouldn't really be a big imposition.
+   x"00", -- next header (0x11 = indicate UDP, 0x00 = hop-by-hop options)
    x"01", -- hop limit: local
    -- ipv6 source address
    x"fe",x"80",x"00",x"00",x"00",x"00",x"00",x"00",
@@ -209,7 +220,7 @@ architecture behavioural of ethernet is
   signal eth_tx_trigger : std_logic := '0';
   signal eth_tx_commenced : std_logic := '0';
   signal eth_tx_complete : std_logic := '0';
-  signal eth_txen_int : std_logic;
+  signal eth_txen_int : std_logic := '0';
   signal eth_txd_int : unsigned(1 downto 0) := "00";
   signal eth_tx_wait : integer range 0 to 50;
  
@@ -253,6 +264,8 @@ architecture behavioural of ethernet is
  signal eth_txd_phase : unsigned(1 downto 0) := "00";
  signal eth_txd_phase_drive : unsigned(1 downto 0) := "00";
 
+ signal eth_tx_packet_count : unsigned(5 downto 0) := "000000";
+ 
  signal miim_request : std_logic := '0';
  signal miim_write : std_logic := '0';
  signal miim_phyid : unsigned(4 downto 0) := to_unsigned(0,5);
@@ -428,6 +441,7 @@ begin  -- behavioural
           end if;
         when Idle =>
           if eth_tx_trigger = '1' then
+
             -- reset frame padding state
             eth_tx_padding <= '0';
             if to_integer(eth_tx_size)<60 then
@@ -455,13 +469,18 @@ begin  -- behavioural
             eth_tx_commenced <= '1';
             eth_tx_complete <= '0';
             tx_preamble_count <= 29;
-            eth_txen <= '1';
             eth_txen_int <= '1';
             eth_txd_int <= "01";
             eth_tx_state <= WaitBeforeTX;
             eth_tx_viciv <= '1';
           end if;
         when WaitBeforeTX =>
+          if eth_tx_packet_count /= "111111" then
+            eth_tx_packet_count <= eth_tx_packet_count + 1;
+          else
+            eth_tx_packet_count <= "000000";
+          end if;           
+
           txbuffer_readaddress <= 0;
           eth_tx_state <= SendingPreamble;
           report "Reseting TX CRC";
@@ -707,8 +726,8 @@ begin  -- behavioural
             rxbuffer_writeaddress <= eth_frame_len;
           else
             -- got two more bits
-            report "ETHRX: Received bits from RMII: "
-              & to_string(std_logic_vector(eth_rxd));
+--            report "ETHRX: Received bits from RMII: "
+--              & to_string(std_logic_vector(eth_rxd));
             if eth_bit_count = 6 then
               -- this makes a byte
               if frame_length(10 downto 0) = "11111111000" then
@@ -915,7 +934,7 @@ begin  -- behavioural
             fastio_rdata(5) <= eth_irq_rx;
             -- @IO:GS $D6E1.4 - Ethernet TX IRQ status
             fastio_rdata(4) <= eth_irq_tx;
-            -- $D6E1.3 - Enable streaming of VIC-IV display on ethernet
+            -- $D6E1.3 - Enable streaming of CPU instruction stream or VIC-IV display on ethernet
             fastio_rdata(3) <= eth_videostream;
             -- @IO:GS $D6E1.2 - Indicate which RX buffer was most recently used
             fastio_rdata(2) <= eth_rx_buffer_last_used_48mhz;            
@@ -1033,7 +1052,7 @@ begin  -- behavioural
         or (eth_irqenable_tx='1' and eth_irq_tx='1') then
         irq <= '0';
       else
-        irq <= 'H';
+        irq <= '1';
       end if;
 
       if fastio_write='1' then
@@ -1090,6 +1109,10 @@ begin  -- behavioural
                 when x"01" =>
                   -- @IO:GS $D6E4 = $01 = Transmit packet
                   eth_tx_trigger <= '1';
+                when x"dc" => -- (D)ebug (C)pu - stream via ethernet ($D6E1.3 must also be set)
+                  cpu_ethernet_stream <= '1';
+                when x"d4" => -- (D)ebug VIC-IV(4) - stream via ethernet ($D6E1.3 must also be set)
+                  cpu_ethernet_stream <= '0';
                 when x"de" => -- debug rx
                   -- Receive exactly one frame, and keep all signals states
                   debug_rx <= '1';

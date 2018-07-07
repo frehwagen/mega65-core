@@ -38,7 +38,9 @@ use work.victypes.all;
 entity gs4510 is
   generic(
     math_unit_enable : boolean := false;
-    cpufrequency : integer := 50 );
+    chipram_1mb : std_logic := '0';
+    cpufrequency : integer := 50;
+    chipram_size : integer := 393216);
   port (
     mathclock : in std_logic;
     Clock : in std_logic;
@@ -157,8 +159,10 @@ entity gs4510 is
     -- Interface to ChipRAM in video controller (just 128KB for now)
     ---------------------------------------------------------------------------
     chipram_we : OUT STD_LOGIC := '0';
-    chipram_address : OUT unsigned(16 DOWNTO 0) := "00000000000000000";
-    chipram_datain : OUT unsigned(7 DOWNTO 0);
+
+    chipram_clk : IN std_logic;
+    chipram_address : IN unsigned(19 DOWNTO 0) := to_unsigned(0,20);
+    chipram_dataout : OUT unsigned(7 DOWNTO 0);
 
     cpu_leds : out std_logic_vector(3 downto 0);
 
@@ -223,17 +227,6 @@ end entity gs4510;
 
 architecture Behavioural of gs4510 is
   
-component shadowram is
-    port (Clk : in std_logic;
-          address_i : in integer range 0 to 131071;
-          we : in std_logic;
-          data_i : in unsigned(7 downto 0);
-          writes : out unsigned(7 downto 0);
-          no_writes : out unsigned(7 downto 0);
-          data_o : out unsigned(7 downto 0)
-          );
-end component;
-
   -- DMAgic settings
   signal support_f018b : std_logic := '0';
   signal job_is_f018b : std_logic := '0';
@@ -272,11 +265,10 @@ end component;
   signal last_value : unsigned(7 downto 0)  := (others => '0');
 
   -- Shadow RAM control
-  signal shadow_bank : unsigned(7 downto 0)  := (others => '0');
-  signal shadow_address : integer range 0 to 131071 := 0;
-  signal debug_address_w_dbg : integer range 0 to 131071 := 0;
-  signal debug_address_r_dbg : integer range 0 to 131071 := 0;
-  signal shadow_address_next : integer range 0 to 131071 := 0;
+  signal shadow_address : integer range 0 to 1048575 := 0;
+  signal debug_address_w_dbg : integer range 0 to 1048575 := 0;
+  signal debug_address_r_dbg : integer range 0 to 1048575 := 0;
+  signal shadow_address_next : integer range 0 to 1048575 := 0;
   
   signal shadow_rdata : unsigned(7 downto 0)  := (others => '0');
   signal shadow_wdata : unsigned(7 downto 0)  := (others => '0');
@@ -297,21 +289,19 @@ end component;
   
   signal long_address_read : unsigned(27 downto 0)  := (others => '0');
   signal long_address_write : unsigned(27 downto 0)  := (others => '0');
-  
-  -- ROM RAM control
-  signal rom_address : integer range 0 to 131071 := 0;
-  signal rom_address_next : integer range 0 to 131071 := 0;
-  signal rom_rdata : unsigned(7 downto 0)  := (others => '0');
-  signal rom_wdata : unsigned(7 downto 0)  := (others => '0');
-  signal rom_wdata_next : unsigned(7 downto 0)  := (others => '0');
-  signal rom_write_count : unsigned(7 downto 0)  := (others => '0');
-  signal rom_no_write_count : unsigned(7 downto 0)  := (others => '0');
-  signal rom_write : std_logic := '0';
-  signal rom_write_next : std_logic := '0';
 
-  -- GeoRAM emulation: by default point it somewhere at the DDR RAM
-  signal georam_page : unsigned(19 downto 0) := x"e0000";
-  signal georam_blockmask : unsigned(7 downto 0) := x"ff";
+  -- C65 RAM Expansion Controller
+  -- bit 7 = indicate error status?
+  signal rec_status : unsigned(7 downto 0) := x"80";
+  
+  -- GeoRAM emulation: by default point it the 128KB of extra memory at the
+  -- 256KB mark
+  -- georam_page is the address x 256, so 256KB = page $400
+  signal georam_page : unsigned(19 downto 0) := x"00400";
+  -- GeoRAM is organised in 16KB blocks.  The block mask is thus in units of 16KB.
+  -- Note that a 128KB GeoRAM is not standard, and some software may think it
+  -- is 512KB, which will of course cause problems.
+  signal georam_blockmask : unsigned(7 downto 0) := to_unsigned(128/16,8);
   signal georam_block : unsigned(7 downto 0) := x"00";
   signal georam_blockpage : unsigned(7 downto 0) := x"00";
 
@@ -658,13 +648,12 @@ end component;
     HypervisorRegister,     -- 0x01
     CPUPort,                -- 0x02
     Shadow,                 -- 0x03
-    ROMRAM,                 -- 0x04
-    FastIO,                 -- 0x05
-    ColourRAM,              -- 0x06
-    VICIV,                  -- 0x07
-    Kickstart,              -- 0x08
-    SlowRAM,                -- 0x09
-    Unmapped                -- 0x0a
+    FastIO,                 -- 0x04
+    ColourRAM,              -- 0x05
+    VICIV,                  -- 0x06
+    Kickstart,              -- 0x07
+    SlowRAM,                -- 0x08
+    Unmapped                -- 0x09
     );
 
   signal read_source : memory_source;
@@ -1214,7 +1203,7 @@ end component;
   signal reg_math_cycle_counter_plus_one : unsigned(31 downto 0) := to_unsigned(0,32);
   -- # of math cycles to trigger end of job / math interrupt
   signal reg_math_cycle_compare : unsigned(31 downto 0) := to_unsigned(0,32);
-  
+
 begin
 
   multipliers: for unit in 0 to 7 generate
@@ -1262,24 +1251,17 @@ begin
       );
   end generate;
     
-  shadowram0 : shadowram port map (
-    clk     => clock,
-    address_i => shadow_address_next,
-    we      => shadow_write_next,
-    data_i  => memory_access_wdata_next,
+  shadowram0 : entity work.shadowram port map (
+    clkA      => clock,
+    addressa  => shadow_address_next,
+    wea       => shadow_write_next,
+    dia       => memory_access_wdata_next,
     no_writes => shadow_no_write_count,
-    writes => shadow_write_count,
-    data_o  => shadow_rdata
-    );
-
-  romram0 : shadowram port map (
-    clk   => clock,
-    address_i => rom_address_next,
-    we      => rom_write_next,
-    data_i  => memory_access_wdata_next,
-    no_writes => rom_no_write_count,
-    writes => rom_write_count,
-    data_o  => rom_rdata
+    writes    => shadow_write_count,
+    doa       => shadow_rdata,
+    clkB      => chipram_clk,
+    addressb  => chipram_address,
+    dob       => chipram_dataout
     );
 
   zpcache0: entity work.ram36x1k port map (
@@ -1499,10 +1481,6 @@ begin
         reg_mb_low <= x"80";
       end if;
       
-      -- Map shadow RAM to unmapped address space at $C0000 (768KB)
-      -- (as well as always-on shadowing of $00000-$1FFFF)
-      shadow_bank <= x"0C";
-      
       -- Default CPU flags
       flag_c <= '0';
       flag_d <= '0';
@@ -1522,8 +1500,8 @@ begin
       shadow_write_flags(0) <= '1';
       fastio_read <= '0';
       fastio_write <= '0';
-      chipram_we <= '0';        
-      chipram_datain <= x"c0";    
+      --chipram_we <= '0';        
+      --chipram_datain <= x"c0";    
 
       slow_access_request_toggle_drive <= slow_access_ready_toggle_buffer;
       slow_access_write_drive <= '0';
@@ -1617,7 +1595,6 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      rom_write <= '0';
 
       report "MEMORY long_address = $" & to_hstring(long_address);
       -- @IO:C64 $0000000 6510/45GS10 CPU port DDR
@@ -1642,6 +1619,16 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= real_long_address(3 downto 0);
+      elsif (long_address = x"ffd30a0") or (long_address = x"ffd10a0") then
+        accessing_cpuport <= '1';
+        report "Preparing to read from CPU memory expansion controller port";
+        read_source <= CPUPort;
+        -- One cycle wait-state on hypervisor registers to remove the register
+        -- decode from the critical path of memory access.
+        wait_states <= x"01";
+        wait_states_non_zero <= '1';
+        proceed <= '0';
+        cpuport_num <= "0010";        
       elsif long_address(27 downto 4) = x"400000" then
         -- More CPU ports for debugging.
         -- (this was added to debug CIA IRQ bugs where reading/writing from
@@ -1655,13 +1642,11 @@ begin
         wait_states_non_zero <= '1';
         proceed <= '0';
         cpuport_num <= real_long_address(3 downto 0);
-      elsif long_address(27 downto 16)="0000"&shadow_bank then
-        -- Reading from 256KB shadow ram (which includes 128KB fixed shadowing of
-        -- chipram).  This is the only memory running at the CPU's native clock.
-        -- Think of it as a kind of direct-mapped L1 cache.
+      elsif long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+        -- Reading from chipram
         -- @ IO:C64 $0000002-$000FFFF - 64KB RAM
         -- @ IO:C65 $0010000-$001FFFF - 64KB RAM
-        -- @ IO:C65 $0020000-$003FFFF - 128KB ROM
+        -- @ IO:C65 $0020000-$003FFFF - 128KB ROM (can be used as RAM in M65 mode)
         -- @ IO:C65 $002A000-$002BFFF - 8KB C64 BASIC ROM
         -- @ IO:C65 $002D000-$002DFFF - 4KB C64 CHARACTER ROM
         -- @ IO:C65 $002E000-$002FFFF - 8KB C64 KERNAL ROM
@@ -1670,25 +1655,7 @@ begin
         -- @ IO:C65 $0038000-$003BFFF - 8KB C65 BASIC GRAPHICS ROM
         -- @ IO:C65 $0032000-$0035FFF - 8KB C65 BASIC ROM
         -- @ IO:C65 $0030000-$0031FFF - 16KB C65 DOS ROM
-        
-        report "Preparing to read from Shadow";
-        shadow_address <= shadow_address_next;
-        read_source <= Shadow;
-        accessing_shadow <= '1';
-        wait_states <= shadow_wait_states;
-        if shadow_wait_states=x"00" then
-          wait_states_non_zero <= '0';
-          proceed <= '1';
-        else
-          wait_states_non_zero <= '1';
-          proceed <= '0';
-        end if;
-        report "Reading from shadow ram address $" & to_hstring(long_address(17 downto 0))
-          & ", word $" & to_hstring(long_address(18 downto 3)) severity note;
-                                        --Also mapped to 7F00000 - 7F1FFFF
-      elsif long_address(27 downto 17)="00000000000" or long_address(27 downto 17)="01111111000" then
-        -- Reading from chipram, so read from the bottom 128KB of the shadow RAM
-        -- instead.
+        -- @ IO:M65 $0040000-$005FFFF - 128KB RAM (in place of C65 cartridge support)
         report "Preparing to read from Shadow";
         shadow_address <= shadow_address_next;
         read_source <= Shadow;
@@ -1705,23 +1672,6 @@ begin
         report "Reading from shadowed chipram address $"
           & to_hstring(long_address(19 downto 0)) severity note;
                                         --Also mapped to 7F2 0000 - 7F3 FFFF
-      elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
-        -- Reading from 128KB ROM
-        report "Preparing to read from ROMRAM";
-        rom_address <= rom_address_next;
-        read_source <= ROMRAM;
-        accessing_shadow <= '0';
-        accessing_rom <= '1';
-        wait_states <= shadow_wait_states;
-        if shadow_wait_states=x"00" then
-          wait_states_non_zero <= '0';
-          proceed <= '1';
-        else
-          wait_states_non_zero <= '1';
-          proceed <= '0';
-        end if;
-        report "Reading from ROM address $"
-          & to_hstring(long_address(19 downto 0)) severity note;
       elsif long_address(27 downto 20) = x"FF" then
         report "Preparing to read from FastIO";
         read_source <= FastIO;
@@ -2058,14 +2008,12 @@ begin
           case cpuport_num is
             when x"0" => return cpuport_ddr;
             when x"1" => return cpuport_value;
+            when x"2" => return rec_status;
             when others => return x"ff";
           end case;
         when Shadow =>
           report "reading from shadow RAM" severity note;
           return shadow_rdata;
-        when ROMRAM =>
-          report "reading from ROM RAM" severity note;
-          return rom_rdata;
         when ColourRAM =>
           report "reading colour RAM fastio byte $" & to_hstring(fastio_vic_rdata) severity note;
           return unsigned(fastio_colour_ram_rdata);
@@ -2107,7 +2055,6 @@ begin
       -- Get the shadow RAM or ROM address on the bus fast to improve timing.
       shadow_write <= '0';
       shadow_write_flags(1) <= '1';
-      rom_write <= '0';
       
       shadow_write_flags(0) <= '1';
       shadow_write_flags(1) <= '1';
@@ -2193,6 +2140,33 @@ begin
         cache_flushing <= '1';
         cache_flush_counter <= (others => '0');
       -- Write to DMAgic registers if required
+      elsif (long_address = x"FFD30A0") or (long_address = x"FFD10A0") then
+        -- @ IO:65 $D0A0 - C65 RAM Expansion controller
+        -- The specifications of this interface is VERY under-documented.
+        -- There are two versions: 512KB and 1MB - 8MB
+
+        -- 512KB version is relatively simple:
+        -- Bit 3 - CPU sees expansion bank 0 or 1
+        -- Bit 2 - VIC uses expansion (1) or internal (0) RAM
+        -- Bit 1 - VIC address range (0=$C0000-$DFFFF, 1=$E0000-$FFFFF)
+        -- Bit 0 - VIC sees expansion bank 0 or 1
+        -- Writing %xxxxx0xx -> VIC sees internal 128KB
+        -- Writing %xxxxx100 -> VIC sees expansion RAM bank 0, $C0000-$DFFFF
+        -- Writing %xxxxx110 -> VIC sees expansion RAM bank 0, $E0000-$FFFFF
+        -- Writing %xxxxx101 -> VIC sees expansion RAM bank 1, $C0000-$DFFFF
+        -- Writing %xxxxx111 -> VIC sees expansion RAM bank 1, $E0000-$FFFFF
+        -- Writing %xxxx0xxx -> CPU sees expansion bank 0 (presumably at $80000-$FFFFF)
+        -- Writing %xxxx1xxx -> CPU sees expansiob bank 1 (presumably at $80000-$FFFFF)
+
+        -- 1MB-8MB version lacks documentation that I can find.
+        -- Bit x - CART - presumably enable cartridge memory visibility?
+        -- On read:
+        -- Bit 7 - Indicate error condition?
+        -- DMAgic sees expanded RAM from BANK $40 onwards?
+        -- Presumably something controls what we see in the 1MB address space
+
+        -- For now, just always report an error condition.
+        rec_status <= x"80";
       elsif (long_address = x"FFD3700") or (long_address = x"FFD1700") then        
         -- Set low order bits of DMA list address
         reg_dmagic_addr(7 downto 0) <= value;
@@ -2288,8 +2262,6 @@ begin
         -- @IO:GS $D7FD.6 Override for /GAME : set to 0 to enable
         force_exrom <= value(7);
         force_game <= value(6);
-      elsif (long_address = x"FFD37FE") or (long_address = x"FFD17FE") then
-        shadow_bank <= value;
       elsif (long_address = x"FFD37ff") or (long_address = x"FFD17ff") then
         -- re-enable kickstart ROM.  This is only to allow for easier development
         -- of kickstart ROMs.
@@ -2308,27 +2280,23 @@ begin
       -- when the CPU reads from shadow ram.
       -- Get the shadow RAM address on the bus fast to improve timing.
       shadow_wdata <= value;
-      rom_wdata <= value;
       
-      if long_address(27 downto 16)="0000"&shadow_bank then
-        report "writing to shadow RAM via shadow_bank" severity note;
+      if long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+        report "writing to chip RAM addr=$" & to_hstring(long_address) severity note;
         shadow_address <= shadow_address_next;
-        shadow_write <= '1';
-        rom_write <= '0';
-        shadow_write_flags(3) <= '1';
-      end if;
-      if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
-        report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
-        shadow_address <= shadow_address_next;
-        shadow_write <= '1';
-        rom_write <= '0';
+        -- Enforce write protect of 2nd 128KB of memory, if being used as ROM
+        if long_address(19 downto 17)="001" then
+          shadow_write <= not rom_writeprotect;
+        else
+          shadow_write <= '1';
+        end if;
         fastio_write <= '0';
         -- shadow_try_write_count <= shadow_try_write_count + 1;
         shadow_write_flags(3) <= '1';
-        chipram_address <= long_address(16 downto 0);
-        chipram_we <= '1';
-        chipram_datain <= value;
-        report "writing to chipram..." severity note;
+        --chipram_address <= long_address(16 downto 0);
+        --chipram_we <= '1';
+        --chipram_datain <= value;
+        --report "writing to chipram..." severity note;
         wait_states <= io_write_wait_states;
         if io_write_wait_states /= x"00" then
           wait_states_non_zero <= '1';
@@ -2349,19 +2317,9 @@ begin
           fastio_addr(15 downto 11) <= (others => '0');
           fastio_addr(10 downto 0) <= std_logic_vector(long_address(10 downto 0));
         end if;
-
-      --Also mapped to 7F20000-7F3FFFF (is this for 1MB linear address space
-      --for task switching?)
-      elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
-        report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
-        rom_address <= rom_address_next;
-        shadow_write <= '0';
-        rom_write <= not rom_writeprotect;
-        fastio_write <= '0';        
       elsif long_address(27 downto 24) = x"F" then --
         accessing_fastio <= '1';
         shadow_write <= '0';
-        rom_write <= '0';
         shadow_write_flags(2) <= '1';
         fastio_addr <= fastio_addr_next;
         last_fastio_addr <= fastio_addr_next;
@@ -2396,11 +2354,11 @@ begin
 
                 -- Write also to CHIP RAM, so that $1F800-FFF works as chipRAM
                 -- as well as colour RAM, when accessed via $D800+ portal
-                chipram_address(16 downto 11) <= "111111"; -- $1F8xx
-                chipram_address(10 downto 0) <= long_address(10 downto 0);
-                chipram_we <= '1';
-                chipram_datain <= value;
-                report "writing to chipram..." severity note;
+                --chipram_address(16 downto 11) <= "111111"; -- $1F8xx
+                --chipram_address(10 downto 0) <= long_address(10 downto 0);
+                --chipram_we <= '1';
+                --chipram_datain <= value;
+                --report "writing to chipram..." severity note;
                 
               end if;
             end if;
@@ -2417,7 +2375,6 @@ begin
         report "writing to slow device memory..." severity note;
         accessing_slowram <= '1';
         shadow_write <= '0';
-        rom_write <= '0';
         fastio_write <= '0';
         shadow_write_flags(2) <= '1';
         -- We dispatch the write, and then wait for the slow access controller
@@ -3515,7 +3472,7 @@ begin
           colour_ram_cs <= '0';
           fastio_write <= '0';
 --          fastio_read <= '0';
-          chipram_we <= '0';
+          --chipram_we <= '0';
           slow_access_write_drive <= '0';
 
           if mem_reading='1' then
@@ -5915,7 +5872,6 @@ begin
                                         -- Get the shadow RAM or ROM address on the bus fast to improve timing.
           shadow_write <= '0';
           shadow_write_flags(1) <= '1';
-          rom_write <= '0';
           
           if memory_access_address = x"FFD3700"
             or memory_access_address = x"FFD1700" then
@@ -6006,8 +5962,8 @@ begin
     reg_dmagic_use_transparent_value,reg_addressingmode,is_load,reg_pagenumber,reg_addr32save,reg_addr,reg_instruction,
     reg_sph,reg_pc_jsr,reg_b,absolute32_addressing_enabled,reg_microcode,reg_t_high,dmagic_dest_io,dmagic_src_io,
     dmagic_first_read,is_rmw,reg_arg1,reg_sp,reg_addr_msbs,reg_a,reg_x,reg_y,reg_z,reg_pageactive,shadow_rdata,proceed,
-    reg_mult_a,read_data,shadow_wdata,rom_wdata,shadow_address,rom_address,kickstart_address,
-    reg_pageid,shadow_bank,rom_writeprotect,georam_page,
+    reg_mult_a,read_data,shadow_wdata,shadow_address,kickstart_address,
+    reg_pageid,rom_writeprotect,georam_page,
     kickstart_address_next
     )
     variable memory_access_address : unsigned(27 downto 0) := x"FFFFFFF";
@@ -6016,15 +5972,10 @@ begin
     variable memory_access_resolve_address : std_logic := '0';
     variable memory_access_wdata : unsigned(7 downto 0) := x"FF";
     
-    variable shadow_address_var : integer range 0 to 131071 := 0;
+    variable shadow_address_var : integer range 0 to 1048575 := 0;
     variable shadow_write_var : std_logic := '0';
     variable shadow_read_var : std_logic := '0';
     variable shadow_wdata_var : unsigned(7 downto 0) := x"FF";
-
-    variable rom_address_var : integer range 0 to 131071 := 0;
-    variable rom_write_var : std_logic := '0';
-    variable rom_read_var : std_logic := '0';
-    variable rom_wdata_var : unsigned(7 downto 0) := x"FF";
 
     variable kickstart_address_var : std_logic_vector(13 downto 0);
     variable fastio_addr_var : std_logic_vector(19 downto 0);
@@ -6296,23 +6247,19 @@ begin
     -- These always reset after each cycle though (no feedback loop)
     shadow_write_var := '0';
     shadow_read_var := '0';
-    rom_write_var := '0';
-    rom_read_var := '0';
     
     fastio_addr_var := fastio_addr;
     fastio_addr_next <= fastio_addr;
     
     -- By default these hold their old value while CPU is halted
     shadow_wdata_var := shadow_wdata;
-    rom_wdata_var := rom_wdata;
-    shadow_address_next <= shadow_address;
-    rom_address_next <= rom_address;
+    if shadow_address < chipram_size then
+      shadow_address_next <= shadow_address;
+    end if;
     shadow_wdata_next <= shadow_wdata;
-    rom_wdata_next <= rom_wdata;
     kickstart_address_next <= kickstart_address;
 
     shadow_address_var := shadow_address;
-    rom_address_var := rom_address;
 
     long_address_write_var := x"FFFFFFF";
     long_address_read_var := x"FFFFFFF";
@@ -6856,7 +6803,6 @@ begin
 
   		--shadow_address_var := memory_access_address(long_address(16 downto 0));
   		shadow_wdata_var := memory_access_wdata;
-  		rom_wdata_var := memory_access_wdata;
 
   		if memory_access_write='1' then
   		  if memory_access_resolve_address = '1' then
@@ -6866,10 +6812,11 @@ begin
   		  real_long_address := memory_access_address;
 
   		  -- Remap GeoRAM memory accesses
-  		  --if real_long_address(27 downto 16) = x"FFD"
-  		    --and real_long_address(11 downto 8)= x"E" then
-  		    --long_address := georam_page&real_long_address(7 downto 0);
-  		    --end if;
+  		  if real_long_address(27 downto 16) = x"FFD"
+  		    and real_long_address(11 downto 8)= x"E"
+                    and georam_blockmask /= x"00" then
+  		    long_address := georam_page&real_long_address(7 downto 0);
+                  end if;
 
   		  -- shadow_address_var := to_integer(long_address(16 downto 0));
 		  
@@ -6886,7 +6833,6 @@ begin
   		    report "Writing to colour RAM";
   		    -- Write to shadow RAM
   		    -- shadow_write <= '0';
-  		    -- rom_write <= '0';
 
   		    -- Then remap to colour ram access: remap to $FF80000 - $FF807FF
   		    long_address := x"FF80"&'0'&real_long_address(10 downto 0);
@@ -6902,36 +6848,30 @@ begin
 		  
   		  long_address_write_var := long_address;
 		        
-  		  if long_address(27 downto 16)="0000"&shadow_bank then
-  		    report "writing to shadow RAM via shadow_bank" severity note;
-  		    shadow_write_var := '1';
-  		    shadow_address_var := to_integer(long_address(16 downto 0));
-  		  end if;
-  		  if long_address(27 downto 17)="00000000000" or (long_address(27 downto 17)="01111111000" and hypervisor_mode='1') then
+  		  if long_address(27 downto 17)="00000000001" then
+  		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
+  		    shadow_write_var := not rom_writeprotect;
+  		    shadow_address_var := to_integer(long_address(19 downto 0));
+                  elsif long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
   		    report "writing to shadow RAM via chipram shadowing. addr=$" & to_hstring(long_address) severity note;
   		    shadow_write_var := '1';
-  		    shadow_address_var := to_integer(long_address(16 downto 0));
+  		    shadow_address_var := to_integer(long_address(19 downto 0));
 
-          -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
-          -- when writing here.
-          if long_address(27 downto 12) = x"001F" and long_address(11) = '1' then
-            report "writing to colour RAM via $001F8xx" severity note;
+                    -- C65 uses $1F800-FFF as colour RAM, so we need to write there, too,
+                    -- when writing here.
+                    if long_address(27 downto 12) = x"001F" and long_address(11) = '1' then
+                      report "writing to colour RAM via $001F8xx" severity note;
 
-            -- And also to colour RAM
-            fastio_addr_var(19 downto 16) := x"8";
-            fastio_addr_var(15 downto 11) := (others => '0');
-            fastio_addr_var(10 downto 0) := std_logic_vector(long_address(10 downto 0));
-          end if;
-          
-  		  elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
-  		    report "writing to ROM. addr=$" & to_hstring(long_address) severity note;
-  		    rom_write_var := not rom_writeprotect;
-  		    rom_address_var := to_integer(long_address(16 downto 0));
-  		  end if;
+                      -- And also to colour RAM
+                      fastio_addr_var(19 downto 16) := x"8";
+                      fastio_addr_var(15 downto 11) := (others => '0');
+                      fastio_addr_var(10 downto 0) := std_logic_vector(long_address(10 downto 0));
+                    end if;
+                  end if;
         
-        if long_address(27 downto 24) = x"F" then --
-          fastio_addr_var := std_logic_vector(long_address(19 downto 0));
-        end if;
+                  if long_address(27 downto 24) = x"F" then --
+                    fastio_addr_var := std_logic_vector(long_address(19 downto 0));
+                  end if;
         
   		elsif memory_access_read='1' then
 		   
@@ -6943,7 +6883,8 @@ begin
 		  
   		  -- Remap GeoRAM memory accesses
   		  if real_long_address(27 downto 16) = x"FFD"
-  		    and real_long_address(11 downto 8) = x"E" then
+  		    and real_long_address(11 downto 8) = x"E"
+                    and georam_blockmask /= x"00" then
   		    long_address := georam_page&real_long_address(7 downto 0);
   		  end if;
 		        
@@ -6959,16 +6900,10 @@ begin
 		  
   		  long_address_read_var := long_address;
 		  
-  		   if long_address(27 downto 16)="0000"&shadow_bank then
-  		     shadow_read_var := '1';
-  		     shadow_address_var := to_integer(long_address(16 downto 0));
-  		   elsif long_address(27 downto 17)="00000000000" or long_address(27 downto 17)="01111111000" then
-  		     shadow_read_var := '1';
-  		     shadow_address_var := to_integer(long_address(16 downto 0));
-  		   elsif long_address(27 downto 17)="00000000001" or long_address(27 downto 17)="01111111001" then
-  		     rom_read_var := '1';
-  		     rom_address_var := to_integer(long_address(16 downto 0));
-  		   end if;
+                  if long_address(27 downto 20)=x"00" and ((not long_address(19)) or chipram_1mb)='1' then
+                    shadow_read_var := '1';
+                    shadow_address_var := to_integer(long_address(19 downto 0));
+                  end if;
 		   
          if long_address(19 downto 14)&"00" = x"F8" then
            kickstart_address_var := std_logic_vector(long_address(13 downto 0));
@@ -6978,10 +6913,11 @@ begin
            fastio_addr_var := std_logic_vector(long_address(19 downto 0));
          end if;
          
-  		end if;
+    end if;
 
-	    shadow_address_next <= shadow_address_var;    
-	    rom_address_next <= rom_address_var;
+    if shadow_address_var < chipram_size then
+      shadow_address_next <= shadow_address_var;
+    end if;
       kickstart_address_next <= kickstart_address_var;
       
     end if;
@@ -6997,7 +6933,6 @@ begin
     reg_pages_dirty_next <= reg_pages_dirty_var;
         
     shadow_write_next <= shadow_write_var;
-    rom_write_next <= rom_write_var;
     
     long_address_read <= long_address_read_var;
     long_address_write <= long_address_write_var;
@@ -7020,12 +6955,10 @@ begin
   end process;
 
   -- read_data input mux
-  process (read_source, shadow_rdata, rom_rdata, read_data_copy)
+  process (read_source, shadow_rdata, read_data_copy)
   begin
     if(read_source = Shadow) then
       read_data <= shadow_rdata;
-    elsif(read_source = ROMRAM) then
-      read_data <= rom_rdata;
     else
       read_data <= read_data_copy;
     end if;  

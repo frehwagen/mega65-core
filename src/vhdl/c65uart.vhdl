@@ -170,7 +170,7 @@ architecture behavioural of c65uart is
 
   signal portj_internal : std_logic_vector(7 downto 0) := x"FF";
   
-  signal widget_enable_internal : std_logic := '0';
+  signal widget_enable_internal : std_logic := '1';
   signal ps2_enable_internal : std_logic := '1';
   signal joykey_enable_internal : std_logic := '1';
   signal joyreal_enable_internal : std_logic := '1';
@@ -185,7 +185,7 @@ architecture behavioural of c65uart is
   signal portn_internal : std_logic_vector(7 downto 0) := x"FF";
 
   -- Visual keyboard X and Y start positions (x4).
-  signal porto_internal : std_logic_vector(7 downto 0) := x"00";
+  signal porto_internal : std_logic_vector(7 downto 0) := x"14";
   signal portp_internal : std_logic_vector(7 downto 0) := x"34";
 
   signal joya_rotate_internal : std_logic := '0';
@@ -430,7 +430,9 @@ begin  -- behavioural
           fastio_rdata(0) <= clock709375;
           fastio_rdata(7 downto 1) <= (others => '1');
         when x"0b" =>
-          -- @IO:GS $D60B PMOD port A on FPGA board (data)
+          -- @IO:GS $D60B.7 Display hardware zoom of region under first touch point for on-screen keyboard
+          -- @IO:GS $D60B.6 Display hardware zoom of region under first touch point always
+          -- @IO:GS $D60B.5-0 PMOD port A on FPGA board (data)
           fastio_rdata(7 downto 0) <= unsigned(reg_portf_read);
         when x"0c" =>
           -- @IO:GS $D60C PMOD port A on FPGA board (DDR)

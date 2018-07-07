@@ -1,0 +1,156 @@
+	.outfile "bitmap800x480.prg"
+
+	 .word $0801
+	 .org $0801
+
+	 .scope
+	 .word _next, 10                       ; Next line and current line number
+	 .byte $97, "2,0:", $9e, " 2014", $AA, "65",0      ; POKE 2,0 : SYS 2014+65
+_next:	 .word 0
+    
+	 .checkpc 2079
+	 .advance 2079
+
+	 sei
+
+	 lda #$47
+	 sta $d02f
+	 lda #$53
+	 sta $d02f
+	 lda #$41
+	 sta $0
+
+	 ; The order below is a bit important.
+
+	 ; 1. Set horizontal border width
+	 LDA #$00
+	 STA $D05C
+	 STA $D05D
+
+	 ; bit 0 = 16-bits per character, so 2 colour RAM / screen RAM bytes per 8x8 cell
+	 ; bit 4 = sprite is 640H resolution
+	 LDA	 $D054
+	 ORA	 #$11
+	 STA	 $D054
+
+	 ; Set bitmap mode (makes horizontal borders take effect)
+	 LDA   #$3B
+	 STA   $D011
+
+	 ; Set 640H, 400V
+	 LDA   $D031
+	 ORA   #$88
+	 STA   $D031
+
+	 ; Make vertical borders a bit smaller
+	 ; (600 - 480)/2 = 60 top and 60 bottom
+	 ; then add fudge factor of 14 rasters
+	 LDA 	#<73
+	 STA	$D048 ; top border ends here
+	 LDA	#>73
+	 STA 	$D049 ; top border ends here
+	 LDA	#<554
+	 STA	$D04A
+	 LDA 	#>554
+	 STA	$D04B
+
+	 ; Vertically place bitmap display
+	 LDA	#<74
+	 STA	$D04E ; chargen to this position also
+	 LDA	#>74
+	 STA 	$D04F ; chargen to this position also
+
+	 ; Set to 100 characters per row
+	 LDA   #100
+	 STA   $D058
+	 
+	 ; Disable/Enable 16-colour sprite mode for each sprite?
+	 LDA	  #$00
+	 STA	  $D06B
+
+	; Bit 10 of sprite X position for positions >511
+	 LDA	#$00
+	 STA	$D05F
+
+	 ; Set screen ram that has 100x60 cells x 2 bytes per cell = 12,000 bytes of colour
+	 ; information for bitmap mode.
+	 ; First byte is foreground colour (8-bit) and second byte is background colour (also 8-bit),
+	 ; so each 8x8 cell can still have only 2 colours, but they can be chosen from the whole
+	 ; palette.
+	 LDA #<4096
+	 STA $D060
+	 LDA #>4096
+	 STA $D061
+	 LDA #0
+	 STA $D062
+	 STA $D063
+	 ; Set bitmap data to somewhere that has 100x60 x 8 = 48,000 bytes of RAM.
+	 ; (We are using 2nd bank of 64KB for this)
+	 ; NOTE: This can't actually be set freely (yet), but will be on 16KB boundaries.
+	 LDA #<16384
+	 STA $D068
+	 LDA #>16384
+	 STA $D069
+	 LDA #1
+	 STA $D06A
+
+	 ; Setup foreground/background colours
+	 LDA #<4096
+	 STA $FB
+	 LDA #>4096
+	 STA $FC
+
+	 LDX #100
+	 LDZ #$00
+	 LDA #$00
+colloop:
+	 STA ($FB),Z
+	 INZ
+	 PHA
+	 TXA
+	 STA ($FB),Z
+	 INZ
+	 PLA
+	 DEX
+	 BNE cc1
+	 INC
+	 LDX #100
+cc1:
+	 CPZ #$00
+	 bne colloop
+	 inc $fc
+	 ldy $fc
+	 cpy #$40
+	 bne colloop
+
+
+	 ; Initialise a nice screen of triangles
+	 LDA #<16384
+	 STA $FB
+	 LDA #>16384
+	 STA $FC
+	 LDA #<1
+	 STA $FD
+	 LDA #>1
+	 STA $FE
+
+	 LDZ #$00
+charloop:
+	 LDA #$FF
+	 LDX #7
+c1:	 NOP
+	 STA ($FB),Z
+	 LSR	 
+	 INZ
+	 DEX
+	 BPL c1
+	 CPZ #$00
+	 bne charloop
+	 inc $FC
+	 LDA $FC
+	 CMP #$00
+	 BNE charloop
+
+loop:	 JMP	loop
+
+	 .scend

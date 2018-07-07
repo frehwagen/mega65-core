@@ -180,19 +180,45 @@ entity machine is
          aclInt1 : in std_logic;
          aclInt2 : in std_logic;
          
-         ampPWM : out std_logic;
          ampPWM_l : out std_logic;
          ampPWM_r : out std_logic;
          ampSD : out std_logic;
 
-         micData : in std_logic;
+         micData0 : in std_logic;
+         micData1 : in std_logic;
          micClk : out std_logic;
          micLRSel : out std_logic;
 
-         tmpSDA : out std_logic;
-         tmpSCL : out std_logic;
+         -- I2S audio channels
+         i2s_master_clk : out std_logic := '0';
+         i2s_master_sync : out std_logic := '0';
+         i2s_slave_clk : in std_logic := '0';
+         i2s_slave_sync : in std_logic := '0';
+         pcm_modem_clk : out std_logic := '0';
+         pcm_modem_sync : out std_logic := '0';
+         pcm_modem_clk_in : in std_logic := '0';
+         pcm_modem_sync_in : in std_logic := '0';
+         i2s_headphones_data_out : out std_logic := '0';
+         i2s_headphones_data_in : in std_logic := '0';
+         i2s_speaker_data_out : out std_logic := '0';
+         pcm_modem1_data_in : in std_logic := '0';
+         pcm_modem2_data_in : in std_logic := '0';
+         pcm_modem1_data_out : out std_logic := '0';
+         pcm_modem2_data_out : out std_logic := '0';
+         i2s_bt_data_in : in std_logic := '0';
+         i2s_bt_data_out : out std_logic := '0';    
+         
+         tmpSDA : inout std_logic;
+         tmpSCL : inout std_logic;
          tmpInt : in std_logic;
          tmpCT : in std_logic;
+
+         i2c1SDA : inout std_logic;
+         i2c1SCL : inout std_logic;
+
+         lcdpwm : inout std_logic := '1';
+         touchSDA : inout std_logic := '1';
+         touchSCL : inout std_logic := '1';
          
          ---------------------------------------------------------------------------
          -- IO lines to the ethernet controller
@@ -337,9 +363,9 @@ architecture Behavioral of machine is
   signal fastio_vic_rdata : std_logic_vector(7 downto 0);
   signal colour_ram_fastio_rdata : std_logic_vector(7 downto 0);
 
-  signal chipram_we : STD_LOGIC;
-  signal chipram_address : unsigned(16 DOWNTO 0);
-  signal chipram_datain : unsigned(7 DOWNTO 0);
+  --signal chipram_we : STD_LOGIC;
+  signal chipram_address : unsigned(19 DOWNTO 0);
+  signal chipram_data : unsigned(7 DOWNTO 0);
   
   signal rom_at_e000 : std_logic := '0';
   signal rom_at_c000 : std_logic := '0';
@@ -403,10 +429,18 @@ architecture Behavioral of machine is
   signal phi0 : std_logic := '0';
 
   signal pixel_stream : unsigned (7 downto 0);
+  signal pixel_red : unsigned (7 downto 0);
+  signal pixel_green : unsigned (7 downto 0);
+  signal pixel_blue : unsigned (7 downto 0);
   signal pixel_y : unsigned (11 downto 0);
-  signal pixel_valid : std_logic;
+  signal pixel_valid : std_logic;  -- 0-639 across physical display for visual
+                                   -- keyboard
+  signal pixel_strobe : std_logic;  -- 0-799 across physical display for framepacker
   signal pixel_newframe : std_logic;
   signal pixel_newraster : std_logic;
+  signal native_x_640 : integer;
+  signal native_y_200 : integer;
+  signal native_y_400 : integer;
   signal pixel_x_640 : integer;
   signal pixel_y_scale_200 : unsigned(3 downto 0);
   signal pixel_y_scale_400 : unsigned(3 downto 0);
@@ -502,6 +536,8 @@ architecture Behavioral of machine is
   signal terminal_emulator_ready : std_logic := '0';
 
   signal visual_keyboard_enable : std_logic;
+  signal zoom_en_osk : std_logic;
+  signal zoom_en_always : std_logic;
   signal keyboard_at_top : std_logic;
   signal alternate_keyboard : std_logic;
   signal osk_x : unsigned(11 downto 0);
@@ -510,13 +546,15 @@ architecture Behavioral of machine is
   signal osk_key2 : unsigned(7 downto 0);
   signal osk_key3 : unsigned(7 downto 0);
   signal osk_key4 : unsigned(7 downto 0);
-
+  
   signal osk_touch1_valid : std_logic := '0';
   signal osk_touch1_x : unsigned(13 downto 0) := to_unsigned(0,14);
   signal osk_touch1_y : unsigned(11 downto 0) := to_unsigned(0,12);
+  signal osk_touch1_key : unsigned(7 downto 0) := x"FF";
   signal osk_touch2_valid : std_logic := '0';
   signal osk_touch2_x : unsigned(13 downto 0) := to_unsigned(0,14);
   signal osk_touch2_y : unsigned(11 downto 0) := to_unsigned(0,12);
+  signal osk_touch2_key : unsigned(7 downto 0) := x"FF";
 
   signal secure_mode_flag : std_logic := '0';
   signal matrix_rain_seed : unsigned(15 downto 0);
@@ -820,9 +858,9 @@ begin
       slow_access_wdata => slow_access_wdata,
       slow_access_rdata => slow_access_rdata,
       
-      chipram_we => chipram_we,
+      chipram_clk => pixelclock,
       chipram_address => chipram_address,
-      chipram_datain => chipram_datain,
+      chipram_dataout => chipram_data,
 
       cpu_leds => cpu_leds,
       
@@ -969,24 +1007,30 @@ begin
 --      lcd_vsync => lcd_vsync1,
 --      lcd_hsync => lcd_hsync1,
 --      lcd_display_enable => lcd_display_enable1,
---      lcd_pixel_strobe => lcd_pixel_strobe1,
+      lcd_pixel_strobe => pixel_strobe,
       vgared          => vgared_viciv,
       vgagreen        => vgagreen_viciv,
       vgablue         => vgablue_viciv,
       viciv_outofframe => viciv_outofframe_viciv,
 
       pixel_stream_out => pixel_stream,
+      pixel_red_out => pixel_red,
+      pixel_green_out => pixel_green,
+      pixel_blue_out => pixel_blue,
       pixel_y => pixel_y,
       pixel_valid => pixel_valid,
       pixel_newframe => pixel_newframe,
       pixel_newraster => pixel_newraster,
+      native_x_640 => native_x_640,
+      native_y_200 => native_y_200,
+      native_y_400 => native_y_400,
       pixel_x_640 => pixel_x_640,
       pixel_y_scale_200 => pixel_y_scale_200,
       pixel_y_scale_400 => pixel_y_scale_400,
       
-      chipram_we => chipram_we,
+      --chipram_we => chipram_we,
       chipram_address => chipram_address,
-      chipram_datain => chipram_datain,
+      chipram_datain => chipram_data,
       colour_ram_fastio_rdata => colour_ram_fastio_rdata,
       colour_ram_cs => colour_ram_cs,
       charrom_write_cs => charrom_write_cs,
@@ -1083,6 +1127,8 @@ begin
       buffereduart2_tx => buffereduart2_tx,
       
       visual_keyboard_enable => visual_keyboard_enable,
+      zoom_en_osk => zoom_en_osk,
+      zoom_en_always => zoom_en_always,
       keyboard_at_top => keyboard_at_top,
       alternate_keyboard => alternate_keyboard,
       osk_x => osk_x,
@@ -1091,6 +1137,8 @@ begin
       osk_key2 => osk_key2,
       osk_key3 => osk_key3,
       osk_key4 => osk_key4,
+      touch_key1 => osk_touch1_key,
+      touch_key2 => osk_touch2_key,
             
       uart_char => uart_char,
       uart_char_valid => uart_char_valid,
@@ -1139,6 +1187,20 @@ begin
       viciii_iomode => viciii_iomode,
       sector_buffer_mapped => sector_buffer_mapped,
 
+      -- CPU status for sending to ethernet frame packer
+      
+    monitor_pc => monitor_pc,
+    monitor_opcode => monitor_opcode,
+    monitor_arg1 => monitor_arg1,
+    monitor_arg2 => monitor_arg2,
+    monitor_a => monitor_a,
+    monitor_b => monitor_b,
+    monitor_x => monitor_x,
+    monitor_y => monitor_y,
+    monitor_z => monitor_z,
+    monitor_sp => monitor_sp,
+    monitor_p => monitor_p,
+      
     f_density => f_density,
     f_motor => f_motor,
     f_select => f_select,
@@ -1203,8 +1265,11 @@ begin
       amiga_mouse_assume_b => amiga_mouse_assume_b,
       
       pixel_stream_in => pixel_stream,
+      pixel_red_in => pixel_red,
+      pixel_green_in => pixel_green,
+      pixel_blue_in => pixel_blue,
       pixel_y => pixel_y,
-      pixel_valid => pixel_valid,
+      pixel_valid => pixel_strobe,
       pixel_newframe => pixel_newframe,
       pixel_newraster => pixel_newraster,
       pixel_x_640 => pixel_x_640,
@@ -1233,21 +1298,55 @@ begin
       aclSCK => aclSCK,
       aclInt1 => aclInt1,
       aclInt2 => aclInt2,
-      
-      ampPWM => ampPWM,
+
+      -- PDM digital audio output
       ampPWM_l => ampPWM_l,
       ampPWM_r => ampPWM_r,
       ampSD => ampSD,
-      
-      micData => micData,
+
+      -- MEMS microphones
+      micData0 => micData0,
+      micData1 => micData1,
       micClk => micClk,
       micLRSel => micLRSel,
+
+      -- I2S interfaces for various boards
+      i2s_master_clk => i2s_master_clk,
+      i2s_master_sync => i2s_master_sync,
+      i2s_slave_clk => i2s_slave_clk,
+      i2s_slave_sync => i2s_slave_sync,
+      pcm_modem_clk => pcm_modem_clk,
+      pcm_modem_sync => pcm_modem_sync,
+      pcm_modem_clk_in => pcm_modem_clk_in,
+      pcm_modem_sync_in => pcm_modem_sync_in,      
+      i2s_headphones_data_out => i2s_headphones_data_out,
+      i2s_headphones_data_in => i2s_headphones_data_in,
+      i2s_speaker_data_out => i2s_speaker_data_out,
+      pcm_modem1_data_in => pcm_modem1_data_in,
+      pcm_modem2_data_in => pcm_modem2_data_in,
+      pcm_modem1_data_out => pcm_modem1_data_out,
+      pcm_modem2_data_out => pcm_modem2_data_out,
+      i2s_bt_data_in => i2s_bt_data_in,
+      i2s_bt_data_out => i2s_bt_data_out,
       
       tmpSDA => tmpSDA,
       tmpSCL => tmpSCL,
       tmpInt => tmpInt,
       tmpCT => tmpCT,
 
+      i2c1SDA => i2c1SDA,
+      i2c1SCL => i2c1SCL,
+
+      lcdpwm => lcdpwm,
+      touchSDA => touchSDA,
+      touchSCL => touchSCL,
+      touch1_valid => osk_touch1_valid,
+      touch1_x => osk_touch1_x,
+      touch1_y => osk_touch1_y,
+      touch2_valid => osk_touch2_valid,
+      touch2_x => osk_touch2_x,
+      touch2_y => osk_touch2_y,
+      
       ---------------------------------------------------------------------------
       -- IO lines to the ethernet controller
       ---------------------------------------------------------------------------
@@ -1299,6 +1398,9 @@ begin
     );
 
     visual_keyboard0 : entity work.visual_keyboard port map(
+    native_x_640 => native_x_640,
+    native_y_200 => native_y_200,
+    native_y_400 => native_y_400,
     pixel_x_640_in => pixel_x_640,
     pixel_y_scale_200 => pixel_y_scale_200,
     pixel_y_scale_400 => pixel_y_scale_400,
@@ -1309,6 +1411,8 @@ begin
     vgared_in => vgared_kbd,
     vgagreen_in => vgagreen_kbd,
     visual_keyboard_enable => visual_keyboard_enable,
+    zoom_en_osk => zoom_en_osk,
+    zoom_en_always => zoom_en_always,
     keyboard_at_top => keyboard_at_top,
     alternate_keyboard => alternate_keyboard,
     instant_at_top => '0',
@@ -1318,10 +1422,12 @@ begin
     key4 => osk_key4,
     touch1_valid => osk_touch1_valid,
     touch1_x => osk_touch1_x,    
-    touch1_y => osk_touch1_y,    
+    touch1_y => osk_touch1_y,
+    touch1_key => osk_touch1_key,
     touch2_valid => osk_touch2_valid,
     touch2_x => osk_touch2_x,    
     touch2_y => osk_touch2_y,
+    touch2_key => osk_touch2_key,
 
     matrix_fetch_address => matrix_fetch_address,
     matrix_rdata => matrix_rdata,

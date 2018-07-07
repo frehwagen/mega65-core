@@ -53,6 +53,9 @@ use work.all;
 --use UNISIM.VComponents.all;
 
 entity viciv is
+  generic (
+    chipram_size : integer := 393216
+    );
   Port (
     all_pause : in std_logic;
     
@@ -112,21 +115,29 @@ entity viciv is
     viciv_outofframe : out std_logic := '0';
 
     pixel_stream_out : out unsigned (7 downto 0);
+    pixel_red_out : out unsigned (7 downto 0);
+    pixel_green_out : out unsigned (7 downto 0);
+    pixel_blue_out : out unsigned (7 downto 0);
     pixel_y : out unsigned (11 downto 0) := (others => '0');
     pixel_valid : out std_logic;
     pixel_newframe : out std_logic;
     pixel_newraster : out std_logic;
     -- Pixel x counter scaled to count to about 640
     pixel_x_640 : out integer := 0;
+    -- And pixel X counter scaled to actual video mode (typically 800)
+    -- (and corrected for video pipeline depth)
+    native_x_640 : out integer := 0;
+    native_y_200 : out integer := 0;
+    native_y_400 : out integer := 0;
     -- Scale for 200 and 400px high modes (used by compositors)
     pixel_y_scale_400 : out unsigned(3 downto 0) := (others => '0');
     pixel_y_scale_200 : out unsigned(3 downto 0) := (others => '0');
     
     ---------------------------------------------------------------------------
-    -- CPU Interface to ChipRAM in video controller (just 128KB for now)
+    -- CPU Interface to ChipRAM in video controller (allow upto 1MB)
     ---------------------------------------------------------------------------
-    chipram_we : IN STD_LOGIC;
-    chipram_address : IN unsigned(16 DOWNTO 0);
+    --chipram_we : IN STD_LOGIC;
+    chipram_address : OUT unsigned(19 DOWNTO 0);
     chipram_datain : IN unsigned(7 DOWNTO 0);
     
     -----------------------------------------------------------------------------
@@ -325,15 +336,15 @@ architecture Behavioral of viciv is
   signal screen_ram_buffer_dout : unsigned(7 downto 0) := x"00";
   
   -- Internal registers used to keep track of the screen ram for the current row
-  signal screen_row_address : unsigned(16 downto 0) := to_unsigned(0,17);
-  signal screen_row_current_address : unsigned(16 downto 0) := to_unsigned(0,17);
+  signal screen_row_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal screen_row_current_address : unsigned(19 downto 0) := to_unsigned(0,20);
 
   signal full_colour_fetch_count : integer range 0 to 8 := 0;
   signal full_colour_data : unsigned(63 downto 0) := (others => '0');
   signal paint_full_colour_data : unsigned(63 downto 0) := (others => '0');
 
   -- chipram access management registers
-  signal next_ramaddress : unsigned(16 downto 0);
+  signal next_ramaddress : unsigned(19 downto 0);
   signal next_ramaccess_is_screen_row_fetch : std_logic := '0';
   signal this_ramaccess_is_screen_row_fetch : std_logic := '0';
   signal last_ramaccess_is_screen_row_fetch : std_logic := '0';
@@ -350,10 +361,10 @@ architecture Behavioral of viciv is
   signal next_ramaccess_screen_row_buffer_address : unsigned(8 downto 0) := to_unsigned(0,9);
   signal last_ramaccess_screen_row_buffer_address : unsigned(8 downto 0) := to_unsigned(0,9);
   signal final_ramaccess_screen_row_buffer_address : unsigned(8 downto 0) := to_unsigned(0,9);
-  signal next_screen_row_fetch_address : unsigned(16 downto 0) := to_unsigned(0,17);
-  signal this_screen_row_fetch_address : unsigned(16 downto 0) := to_unsigned(0,17);
-  signal last_screen_row_fetch_address : unsigned(16 downto 0) := to_unsigned(0,17);
-  signal final_screen_row_fetch_address : unsigned(16 downto 0) := to_unsigned(0,17);
+  signal next_screen_row_fetch_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal this_screen_row_fetch_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal last_screen_row_fetch_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal final_screen_row_fetch_address : unsigned(19 downto 0) := to_unsigned(0,20);
   signal final_ramdata : unsigned(7 downto 0) := to_unsigned(0,8);
 
   -- Internal registers for drawing a single raster of character data to the
@@ -519,7 +530,7 @@ architecture Behavioral of viciv is
   signal dat_y : unsigned(7 downto 0) := x"00";
   signal dat_bitplane_offset : unsigned(15 downto 0) := x"0000";
   signal bitplane_addresses : sprite_vector_eight;
-  signal max_sprite_fetch_byte_number : integer range 0 to 319 := 0;
+  signal max_sprite_fetch_byte_number : integer range 0 to 399 := 0;
   
   -- Extended sprite features
   signal sprite_extended_height_enables : std_logic_vector(7 downto 0) := "00000000";
@@ -585,13 +596,13 @@ architecture Behavioral of viciv is
   signal pixel_is_sprite : std_logic;
 
   signal sprite_fetch_drive : std_logic := '0';
-  signal sprite_fetch_sprite_number : integer range 0 to 31;
-  signal sprite_fetch_byte_number : integer range 0 to 319;
-  signal sprite_fetch_sprite_number_drive : integer range 0 to 31;
-  signal sprite_fetch_byte_number_drive : integer range 0 to 319;
-  signal sprite_pointer_address : unsigned(16 downto 0);
-  signal sprite_data_address : unsigned(16 downto 0);
-  signal sprite_h640_msbs : std_logic_vector(7 downto 0);
+  signal sprite_fetch_sprite_number : integer range 0 to 31 := 0;
+  signal sprite_fetch_byte_number : integer range 0 to 319 := 0;
+  signal sprite_fetch_sprite_number_drive : integer range 0 to 31 := 0;
+  signal sprite_fetch_byte_number_drive : integer range 0 to 319 := 0;
+  signal sprite_pointer_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal sprite_data_address : unsigned(19 downto 0) := to_unsigned(0,20);
+  signal sprite_h640_msbs : std_logic_vector(7 downto 0) := x"00";
 
   -- Compatibility registers
   signal twentyfourlines : std_logic := '0';
@@ -683,10 +694,10 @@ architecture Behavioral of viciv is
   signal chargen_y_sub : unsigned(4 downto 0);
 
   -- Common bitmap and character drawing info
-  signal glyph_data_address : unsigned(16 downto 0);
+  signal glyph_data_address : unsigned(19 downto 0);
 
   -- For holding pre-calculated expressions to flatten logic
-  signal bitmap_glyph_data_address : unsigned(16 downto 0);
+  signal bitmap_glyph_data_address : unsigned(19 downto 0);
 
 
   -- Bitmap drawing info
@@ -794,8 +805,8 @@ architecture Behavioral of viciv is
   signal xbackporch_edge : std_logic;
   signal last_xbackporch_edge : std_logic;
 
-  signal last_ramaddress : unsigned(16 downto 0);
-  signal ramaddress : unsigned(16 downto 0);
+  signal last_ramaddress : unsigned(19 downto 0);
+  signal ramaddress : unsigned(19 downto 0);
   signal ramdata : unsigned(7 downto 0);
   signal ramdata_drive : unsigned(7 downto 0);
 
@@ -821,6 +832,7 @@ architecture Behavioral of viciv is
   signal xpixel_fw640 : unsigned(10 downto 0);
   signal xpixel_fw640_sub : unsigned(9 downto 0);
   signal chargen_x_scale_fw640 : unsigned(7 downto 0);
+  signal xpixel_fw640_last : unsigned(10 downto 0);
   
   -- Colour RAM access for video controller
   signal colourramaddress : unsigned(15 downto 0);
@@ -890,7 +902,7 @@ architecture Behavioral of viciv is
   -- We have a simple call-stack scheme, where GOTO tokens and GOSUB tokens
   -- can cause redirection of the screen RAM stream being read. This happens
   -- during the badline fetch, i.e., once per character row.
-  type screenline_return_stack_t is  array (0 to 3) of unsigned(16 downto 0);
+  type screenline_return_stack_t is  array (0 to 3) of unsigned(19 downto 0);
   signal screenline_return_stack : screenline_return_stack_t;
   signal screenline_return_stack_count : integer range 0 to 3 := 0;
   -- Some tokens can also set other interesting parameters, such as whether
@@ -948,19 +960,6 @@ begin
       wea(0)  => screen_ram_buffer_write,
       addra  => std_logic_vector(screen_ram_buffer_write_address(8 downto 0)),
       addrb  => std_logic_vector(screen_ram_buffer_read_address(8 downto 0))
-      );
-
-  chipram0: entity work.chipram8bit
-    port map (
-      -- CPU side port (write)
-      clka => cpuclock,
-      wea(0) => chipram_we,
-      addra => std_logic_vector(chipram_address),
-      dina => std_logic_vector(chipram_datain),
-      -- VIC-IV side port (read)
-      clkb => pixelclock,
-      addrb => std_logic_vector(next_ramaddress),
-      unsigned(doutb) => ramdata
       );
 
   colourram: block
@@ -1145,6 +1144,10 @@ begin
               fastio_write => fastio_write,
               fastio_wdata => fastio_wdata
               );
+
+  
+  chipram_address <= next_ramaddress when to_integer(next_ramaddress) < chipram_size;
+  ramdata <= chipram_datain;
   
   process(cpuclock,ioclock,fastio_addr,fastio_read,chardata,
           sprite_x,sprite_y,vicii_sprite_xmsbs,ycounter,extended_background_mode,
@@ -1767,7 +1770,7 @@ begin
         elsif register_number=94 then
           fastio_rdata <= std_logic_vector(to_unsigned(chargen_x_pixels,8));
         elsif register_number=95 then
-          fastio_rdata <= x"FF";          
+          fastio_rdata <= std_logic_vector(sprite_h640_msbs);          
         elsif register_number=96 then
           fastio_rdata <= std_logic_vector(screen_ram_base(7 downto 0));
         elsif register_number=97 then
@@ -2077,7 +2080,7 @@ begin
 -- XXX          charaddress(11) <= fastio_wdata(1);
           -- Bits 14 and 15 get set by writing to $DD00, as the VIC-IV sniffs
           -- that CIA register being written on the fastio bus.
-          screen_ram_base(16) <= '0';
+          screen_ram_base(19 downto 16) <= "0000";
           -- @IO:C64 $D018.7-4 VIC-II screen address (*1KB)
           reg_d018_screen_addr <= unsigned(fastio_wdata(7 downto 4));
           viciv_legacy_mode_registers_touched <= '1';
@@ -2752,6 +2755,16 @@ begin
       pixel_x_640 <= to_integer(xpixel_fw640);
       pixel_y_scale_400 <= chargen_y_scale_400(3 downto 0);
       pixel_y_scale_200 <= chargen_y_scale_200(3 downto 0);
+
+      -- But also export native X position, e.g., for touch panel interface to
+      -- match up with visual keyboard
+
+      -- XXX Why do we need these fudge factors to make everything line up?
+      -- Subtract 10 for video pipeline depth?
+      native_x_640 <= to_integer(vicii_xcounter_640 - 10);
+      -- Subtract 34 for some reason?
+      native_y_200 <= to_integer(vicii_ycounter - 34);
+      native_y_400 <= to_integer(displayy);
       
       --chardata_drive <= unsigned(chardata);
       --paint_chardata <= chardata_drive;
@@ -2876,7 +2889,8 @@ begin
         raster_buffer_read_address <= raster_buffer_read_address_next;
         raster_buffer_read_address_sub <= raster_buffer_read_address_sub_next;
         xcounter <= xcounter + 1;
-        if xcounter = sprite_first_x then
+        -- Allow H640 sprites to begin from far-left
+        if (xcounter = sprite_first_x) or (sprite_h640='1') then
           sprite_x_counting <= '1';
         end if;
         if sprite_x_counting = '1' then
@@ -2987,7 +3001,7 @@ begin
             displayline0 <= '1';
             indisplay := '0';
             report "clearing indisplay because xcounter=0" severity note;
-            screen_row_address <= screen_ram_base(16 downto 0);
+            screen_row_address <= screen_ram_base(19 downto 0);
 
             -- Reset VIC-II raster counter to first raster for top of frame
             -- (the preceeding rasters occur during vertical flyback, in case they
@@ -3110,7 +3124,7 @@ begin
       -- Generate pixel clock based on x640 clock
       last_vicii_xcounter_640 <= vicii_xcounter_640;
       if vicii_xcounter_640 /= last_vicii_xcounter_640 then
-        lcd_pixel_strobe <= '1';
+        lcd_pixel_strobe <= indisplay;
       else
         lcd_pixel_strobe <= '0';
       end if;
@@ -3210,13 +3224,21 @@ begin
         bump_screen_row_address <= '0';
 
         -- Compute the address for the screen row.
-        screen_row_address <= screen_ram_base(16 downto 0) + first_card_of_row;
-
+        if (text_mode='0') and (sixteenbit_charset='1') then
+          -- 16bit charset mode + bitmap mode = 2 bytes screen memory per card,
+          -- so that we can pick foreground and background colours from full
+          -- 256-colour palette.
+          screen_row_address <= screen_ram_base(19 downto 0) + first_card_of_row;
+        else
+          screen_row_address <= screen_ram_base(19 downto 0) + first_card_of_row;
+        end if;
+          
         if before_y_chargen_start='0' then
           -- Increment card number every "bad line"
           report "LEGACY: Advancing first_card_of_row due to end of character";
           first_card_of_row <= to_unsigned(to_integer(first_card_of_row) + row_advance,16);
           -- Similarly update the colour ram fetch address
+          report "COLOURRAM: Advancing colourramaddress";
           colourramaddress <= to_unsigned(to_integer(colour_ram_base) + row_advance,16);
         else
           report "LEGACY: NOT advancing first_card_of_row due to end of character (before_y_chargen_start=1)";
@@ -3451,6 +3473,7 @@ begin
       if xcounter=x_end_of_raster then
         report "FRAMEPACKER: end of raster announcement";
         pixel_newraster <= '1';
+        pixel_valid <= '0';
         pixel_y <= displayy;
       else
         -- output pixels as packed RGB instead of palette colours
@@ -3459,13 +3482,20 @@ begin
         pixel_stream_out(7 downto 5) <= vga_buffer3_red(7 downto 5);
         pixel_stream_out(4 downto 2) <= vga_buffer3_green(7 downto 5);
         pixel_stream_out(1 downto 0) <= vga_buffer3_blue(7 downto 6);
-        pixel_valid <= indisplay;
+        -- And also output full 24bit RGB, that the new frame packer uses
+        pixel_red_out <= vga_buffer3_red;
+        pixel_green_out <= vga_buffer3_green;
+        pixel_blue_out <= vga_buffer3_blue;
+        xpixel_fw640_last <= xpixel_fw640;
+        if xpixel_fw640 /= xpixel_fw640_last then
+          pixel_valid <= indisplay;
+        else
+          pixel_valid <= '0';
+        end if;
         pixel_newraster <= '0';
       end if;
       
       -- 2. From RGB, push out to pins (also draw border)
-      -- Note that for C65 compatability the low nybl has the most significant
-      -- bits.
       if (displayline0 ='1') and (displaycolumn0='1')
         and (((led='1') and (drive_blink_phase='1'))
              or (motor='1')) then
@@ -3531,17 +3561,17 @@ begin
       -- row from the next char card row down the screen.
       if reg_h640='1' then
         bitmap_glyph_data_address
-          <= (character_set_address(16)&character_set_address(14 downto 13)&"0"&"0"&x"000")
+          <= character_set_address(19 downto 0)
           + (to_integer(screen_ram_buffer_read_address)+to_integer(prev_first_card_of_row))*8+to_integer(chargen_y_hold);
       else
         bitmap_glyph_data_address
-          <= (character_set_address(16 downto 13)&"0"&x"000")
+          <= character_set_address(19 downto 0)
           + (to_integer(screen_ram_buffer_read_address)+to_integer(prev_first_card_of_row))*8+to_integer(chargen_y_hold);
       end if;
       if xcounter = 0 then
         report "LEGACY: bitmap_glyph_data_address = $"
           & to_hstring(
-            to_unsigned(to_integer(character_set_address(16 downto 13))*8192
+            to_unsigned(to_integer(character_set_address(19 downto 13))*8192
                         + to_integer(screen_ram_buffer_read_address)
                         +to_integer(first_card_of_row)*8
                         +to_integer(chargen_y_hold)
@@ -3569,6 +3599,9 @@ begin
             -- Reset screen row (bad line) state 
             character_number <= to_unsigned(1,9);
             end_of_row_16 <= '0'; end_of_row <= '0';
+            report "COLOURRAM: Setting colourramaddress via first_card_of_row."
+              & " text_mode=" & std_logic'image(text_mode)
+              & ", sixteenbit_charset=" & std_logic'image(sixteenbit_charset);
             colourramaddress <= to_unsigned(to_integer(colour_ram_base) + to_integer(first_card_of_row),16);
             
             -- Now ask for the first byte.  We indicate all details of this
@@ -3605,6 +3638,8 @@ begin
               if next_token_is_goto='1' then
                 -- Set screen RAM fetch to the value of this token (shifted
                 -- left one bit).
+                -- XXX goto tokens can only point to first 128KB of RAM.
+                next_screen_row_fetch_address(19 downto 17) <= "000";
                 next_screen_row_fetch_address(16 downto 1) <= screen_line_last_token;
                 next_screen_row_fetch_address(0) <= '0';
                 -- Flush screen row buffer fetch pipeline while waiting for
@@ -3638,6 +3673,7 @@ begin
           end if;
           
           -- Is this the last character in the row?
+          -- (Only used when screen lines have only one character?)
           if character_number = virtual_row_width_minus1(7 downto 0)&'1' then
             end_of_row_16 <= '1';
           else
@@ -3779,6 +3815,7 @@ begin
           -- In 16-bit character mode we also need to read the 2nd colour byte,
           -- which are doing now, so we need to advance colourramaddress ready
           -- to read the low colour byte of the next character.
+          report "COLOURRAM: Incrementing colourramaddress";
           colourramaddress <= colourramaddress + 1;
           report "reading high colour byte";
           
@@ -3847,8 +3884,10 @@ begin
           if glyph_full_colour='1' then
             report "glyph is full colour";
             -- Full colour glyphs come from 64*(glyph_number) in RAM, never
-            -- from character ROM.  128KB/64 = 2048 possible glyphs.
-            glyph_data_address(16 downto 6) <= glyph_number(10 downto 0);
+            -- from character ROM.  As we only have 2^16 positions, the glyphs
+            -- must be in only the first 512KB of chipram.
+            glyph_data_address(19) <= '0';
+            glyph_data_address(18 downto 6) <= glyph_number(12 downto 0);
             if glyph_flip_vertical='1' then
               glyph_data_address(5 downto 3) <= not chargen_y_hold;
             else
@@ -3865,11 +3904,11 @@ begin
             -- Again, we take into account if we are flipping vertically.
             if glyph_flip_vertical='0' then
               glyph_data_address
-                <= character_set_address(16 downto 0)
+                <= character_set_address(19 downto 0)
                 + to_integer(glyph_number)*8+to_integer(chargen_y_hold);
             else
               glyph_data_address
-                <= character_set_address(16 downto 0)
+                <= character_set_address(19 downto 0)
                 + to_integer(glyph_number)*8+7-to_integer(chargen_y_hold);
             end if;
             -- Mark as possibly coming from ROM
@@ -3878,8 +3917,8 @@ begin
           raster_fetch_state <= FetchTextCellColourAndSource;
         when FetchBitmapData =>
           if character_data_from_rom = '1' then
-            if glyph_data_address(16 downto 12) = "0"&x"1"
-              or glyph_data_address(16 downto 12) = "0"&x"9" then
+            if glyph_data_address(19 downto 12) = "0000"&x"1"
+              or glyph_data_address(19 downto 12) = "0000"&x"9" then
               report "reading from rom: glyph_data_address=$" & to_hstring(glyph_data_address(15 downto 0))
                 & "chargen_y_hold=" & to_string(std_logic_vector(chargen_y_hold)) severity note;
               character_data_from_rom <= '1';
@@ -3889,6 +3928,7 @@ begin
           end if;
 
           -- Schedule next colour ram byte
+          report "COLOURRAM: Incrementing colourramaddress";
           colourramaddress <= colourramaddress + 1;
 
           if viciii_extended_attributes='1' then
@@ -3909,8 +3949,8 @@ begin
         when FetchTextCellColourAndSource =>
           -- Finally determine whether source is from RAM or CHARROM
           if character_data_from_rom = '1' then
-            if glyph_data_address(16 downto 12) = "0"&x"1"
-              or glyph_data_address(16 downto 12) = "0"&x"9" then
+            if glyph_data_address(19 downto 12) = "0000"&x"1"
+              or glyph_data_address(19 downto 12) = "0000"&x"9" then
               report "reading from rom: glyph_data_address=$" & to_hstring(glyph_data_address(15 downto 0))
                 & "chargen_y=" & to_string(std_logic_vector(chargen_y_hold)) severity note;
               character_data_from_rom <= '1';
@@ -3967,6 +4007,7 @@ begin
           end if;
       
           -- Schedule next colour ram byte
+          report "COLOURRAM: Incrementing colourramaddress";
           colourramaddress <= colourramaddress + 1;
           
           raster_fetch_state <= PaintMemWait;
@@ -4026,7 +4067,10 @@ begin
           -- requested value
           -- Abort if we have already drawn enough characters.
           character_number <= character_number + 1;
-          if character_number = virtual_row_width_minus1(7 downto 0)&'0' then
+          -- We are counting the number characters, not the number of bytes, so
+          -- no need multiply row width by two for 16-bit character mode
+          -- if character_number = virtual_row_width_minus1(7 downto 0)&'0' then
+          if character_number = virtual_row_width_minus1(7 downto 0) then
             end_of_row_16 <= '1';
           else
             end_of_row_16 <= '0';
@@ -4098,7 +4142,7 @@ begin
                   paint_background <= bitmap_colour_background;
                 end if;
                 paint_fsm_state <= PaintMono;
-              elsif multicolour_mode='1' and extended_background_mode='0' then
+              elsif multicolour_mode='1' then
                 -- Multicolour mode
                 paint_background <= screen_colour;
                 if text_mode='1' then
@@ -4107,7 +4151,14 @@ begin
                   -- multi-colour text mode masks bit 3 of the foreground
                   -- colour to select whether the character is multi-colour or
                   -- not.
-                  paint_foreground <= glyph_colour(7 downto 4)&'0'&glyph_colour(2 downto 0);
+                  -- We allow the previously unused MCM+EBC mode to let us pick
+                  -- the background from high-nybl of colour RAM byte.
+                  -- i.e., it really is extended background colour mode in multi-colour
+                  -- mode.
+                  paint_foreground <= "00000"&glyph_colour(2 downto 0);
+                  if extended_background_mode='1' then
+                    paint_background <= "0000"&glyph_colour(7 downto 4);
+                  end if;
                 else
                   paint_mc2 <= bitmap_colour_foreground;
                   paint_mc1 <= bitmap_colour_background;
@@ -4164,42 +4215,43 @@ begin
             max_sprite_fetch_byte_number <= 7;
             if vicii_sprite_pointer_address(23)='0' then
               -- Normal 8-bit sprite pointers
-              sprite_pointer_address(16 downto 3) <= vicii_sprite_pointer_address(16 downto 3);
+              sprite_pointer_address(19 downto 3) <= vicii_sprite_pointer_address(19 downto 3);
               sprite_pointer_address(2 downto 0) <=  to_unsigned(sprite_fetch_sprite_number,3);
               report "SPRITE: will fetch pointer value from $" &
-                to_hstring("000"&(vicii_sprite_pointer_address(16 downto 0) + sprite_fetch_sprite_number));
+                to_hstring(vicii_sprite_pointer_address(19 downto 0) + sprite_fetch_sprite_number);
             else
               -- 16-bit sprite pointers, allowing sprites to be sourced from
               -- anywhere in first 64K x 64 = 4MB of chip RAM (of which we
               -- currently have only 128KB :)
-              sprite_pointer_address(16 downto 4) <= vicii_sprite_pointer_address(16 downto 4);
+              sprite_pointer_address(19 downto 4) <= vicii_sprite_pointer_address(19 downto 4);
               sprite_pointer_address(3 downto 1) <=  to_unsigned(sprite_fetch_sprite_number,3);
               sprite_pointer_address(0) <= '0';
               report "SPRITE: will fetch pointer LSB from $" &
-                to_hstring("000"&(vicii_sprite_pointer_address(16 downto 0) + sprite_fetch_sprite_number*2));              
+                to_hstring(vicii_sprite_pointer_address(19 downto 0) + sprite_fetch_sprite_number*2);
             end if;
             raster_fetch_state <= SpritePointerFetch2;
           else
             -- Fetch VIC-III bitplanes
             -- Bitplanes for odd raster lines
+            -- All figures are increased by 1/3 to allow for 800 wide when required
             if (reg_h640='0' and reg_h1280='0') then
               if bitplane_sixteen_colour_mode_flags(sprite_fetch_sprite_number mod 8)='0'
               then
                 -- 320px, mono bitplane = 40 bytes for 320 pixels
-                max_sprite_fetch_byte_number <= 39;
+                max_sprite_fetch_byte_number <= 49; -- 39;
               else
                 -- 320px, 16-colour bitplane = 160 bytes for 320 pixels
-                max_sprite_fetch_byte_number <= 159;
+                max_sprite_fetch_byte_number <= 199; -- 159;
               end if;
             end if;    
             if (reg_h640='1' and reg_h1280='0') then
               if bitplane_sixteen_colour_mode_flags(sprite_fetch_sprite_number mod 8)='0'
               then
                 -- 320px, mono bitplane = 80 bytes for 640 pixels
-                max_sprite_fetch_byte_number <= 79;
+                max_sprite_fetch_byte_number <= 99; -- 79;
               else
                 -- 320px, 16-colour bitplane = 320 bytes for 640 pixels
-                max_sprite_fetch_byte_number <= 319;
+                max_sprite_fetch_byte_number <= 399; -- 319;
               end if;
             end if;
             -- Don't waste time fetching bitplanes that are disabled.
@@ -4249,11 +4301,11 @@ begin
             -- 16-bit sprite pointers, allowing sprites to be sourced from
             -- anywhere in first 64K x 64 = 4MB of chip RAM (of which we
             -- currently have only 128KB :)
-            sprite_pointer_address(16 downto 4) <= vicii_sprite_pointer_address(16 downto 4);
+            sprite_pointer_address(19 downto 4) <= vicii_sprite_pointer_address(19 downto 4);
             sprite_pointer_address(3 downto 1) <=  to_unsigned(sprite_fetch_sprite_number,3);
             sprite_pointer_address(0) <= '1';
             report "SPRITE: will fetch pointer MSB from $" &
-              to_hstring("000"&(vicii_sprite_pointer_address(16 downto 0) + sprite_fetch_sprite_number*2));              
+              to_hstring(vicii_sprite_pointer_address(19 downto 0) + sprite_fetch_sprite_number*2);
           end if;          
         when SpritePointerCompute1 =>
           -- Drive stage for ram data to improve timing closure
@@ -4282,10 +4334,10 @@ begin
             --  sprite_data_address(14) <= sprite_pointer_address(14);
             --  sprite_data_address(13 downto 0) <= (ramdata_drive&"000000") + to_unsigned(sprite_data_offsets(sprite_fetch_sprite_number),14);
             if (reg_h640='1' or reg_h1280='1') then
-              sprite_data_address(16 downto 14) <= sprite_pointer_address(16 downto 14);
+              sprite_data_address(19 downto 14) <= sprite_pointer_address(19 downto 14);
               sprite_data_address(13 downto 0) <= to_unsigned(sprite_data_offsets(sprite_fetch_sprite_number),14);
             else
-              sprite_data_address(16 downto 13) <= sprite_pointer_address(16 downto 13);
+              sprite_data_address(19 downto 13) <= sprite_pointer_address(19 downto 13);
               sprite_data_address(12 downto 0) <= to_unsigned(sprite_data_offsets(sprite_fetch_sprite_number),13);
             end if;
           end if;
@@ -4297,19 +4349,19 @@ begin
         when SpritePointerComputeMSB =>
           -- Copy in MSB bits for sprite data address
           -- XXX It would be nice to use bit 7 to indicate to source from
-          -- colour RAM, but for now we just clip to the 128KB of chip RAM
+          -- colour RAM, but for now we just clip to the 1MB chip RAM range
           report "SPRITE: setting upper bits of sprite data address to $" & to_hstring(ramdata_drive);
-          sprite_data_address(16 downto 14) <= ramdata_drive(2 downto 0);
+          sprite_data_address(19 downto 14) <= ramdata_drive(5 downto 0);
           raster_fetch_state <= SpriteDataFetch;          
         when SpriteDataFetch =>
           report "SPRITE: fetching sprite #"
             & integer'image(sprite_fetch_sprite_number)
-            & " data from $" & to_hstring("000"&sprite_data_address(16 downto 0));
+            & " data from $" & to_hstring(sprite_data_address(19 downto 0));
           
           if sprite_fetch_sprite_number < 8 then
-            sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 1;
+            sprite_data_address(19 downto 0) <= sprite_data_address(19 downto 0) + 1;
           else
-            sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 8;
+            sprite_data_address(19 downto 0) <= sprite_data_address(19 downto 0) + 8;
           end if;
           raster_fetch_state <= SpriteDataFetch2;
         when SpriteDataFetch2 =>
@@ -4317,12 +4369,12 @@ begin
             & integer'image(sprite_fetch_sprite_number)
             & " data = $" &
             to_hstring(ramdata)
-            & " from $" & to_hstring("000"&sprite_data_address(16 downto 0))
+            & " from $" & to_hstring(sprite_data_address(19 downto 0))
             & " for byte number " & integer'image(sprite_fetch_byte_number);
           if sprite_fetch_sprite_number < 8 then
-            sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 1;
+            sprite_data_address(19 downto 0) <= sprite_data_address(19 downto 0) + 1;
           else
-            sprite_data_address(16 downto 0) <= sprite_data_address(16 downto 0) + 8;
+            sprite_data_address(19 downto 0) <= sprite_data_address(19 downto 0) + 8;
           end if;
 
           -- Schedule pushing fetched sprite/bitplane byte to next cycle when
@@ -4685,6 +4737,9 @@ begin
         -- right of display shifting up one physical pixel.
         chargen_y_hold <= chargen_y;
         -- Work out colour ram address
+        report "COLOURRAM: Setting colourramaddress via first_card_of_row."
+          & " text_mode=" & std_logic'image(text_mode)
+          & ", sixteenbit_charset=" & std_logic'image(sixteenbit_charset);
         colourramaddress <= colour_ram_base + first_card_of_row;
         -- Work out the screen ram address.  We only need to re-fetch screen
         -- RAM if first_card_of_row is different to last time.
@@ -4692,9 +4747,18 @@ begin
 
         -- Set all signals for both eventuality, since none are shared between
         -- the two paths.  This helps keep the logic shallow.
-        screen_row_current_address
-          <= to_unsigned(to_integer(screen_ram_base(16 downto 0))
-                         + to_integer(first_card_of_row),17);
+
+        if (text_mode='0') and (sixteenbit_charset='1') then
+          -- bitmap mode in sixteen bit char mode uses 2 screen RAM bytes per
+          -- card, but not two bitmap bytes, so we have to increment double
+          screen_row_current_address
+            <= to_unsigned(to_integer(screen_ram_base(19 downto 0))
+                           + to_integer(first_card_of_row) + to_integer(first_card_of_row),20);
+        else
+          screen_row_current_address
+            <= to_unsigned(to_integer(screen_ram_base(19 downto 0))
+                           + to_integer(first_card_of_row),20);
+        end if;
         card_of_row <= (others =>'0');
         screen_ram_buffer_write_address <= to_unsigned(0,9);
         screen_ram_buffer_read_address <= to_unsigned(0,9);

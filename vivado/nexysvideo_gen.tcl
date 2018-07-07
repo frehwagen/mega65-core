@@ -109,6 +109,7 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/ghdl_videobuffer.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x512.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x4096.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/ghdl_ram32x1024_sync.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ghdl_ram8x4096_sync.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/colourram.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/crc.vhdl"]"\
@@ -120,6 +121,14 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/sid_6581.vhd"]"\
  "[file normalize "$origin_dir/src/vhdl/shadowram.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/sdcardio.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/audio_mixer.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/audio_complex.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pdm_to_pcm.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pcm_to_pdm.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/i2s_clock.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/i2s_transceiver.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pcm_clock.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pcm_transceiver.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_bits_to_bytes.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_decoder.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_gaps_to_bits.vhdl"]"\
@@ -172,6 +181,9 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/termmem.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/lfsr16.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ram32x1024.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/i2c_master.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pdm_to_pcm.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
 ]
 set imported_files [add_files -fileset sources_1 $files]
 
@@ -491,10 +503,45 @@ set file "vhdl/sdcardio.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
+set file "vhdl/audio_mixer.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/audio_complex.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/pdm_to_pcm.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/pcm_to_pdm.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/i2s_clock.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/i2s_transceiver.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/pcm_clock.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
+set file "vhdl/pcm_transceiver.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
+
 set file "vhdl/ram32x1024.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
+set file "vhdl/pdm_to_pcm.vhdl"
+set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
+set_property -name "file_type" -value "VHDL" -objects $file_obj
 
 # Set 'sources_1' fileset properties
 set obj [get_filesets sources_1]

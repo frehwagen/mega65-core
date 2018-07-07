@@ -1,0 +1,544 @@
+	.outfile "bitmap800x480.prg"
+
+	 .word $0801
+	 .org $0801
+
+	 .scope
+	 .word _next, 10                       ; Next line and current line number
+	 .byte $97, "2,0:", $9e, " 2014", $AA, "65",0      ; POKE 2,0 : SYS 2014+65
+_next:	 .word 0
+    
+	 .checkpc 2079
+	 .advance 2079
+
+	 sei
+
+	 lda #$47
+	 sta $d02f
+	 lda #$53
+	 sta $d02f
+	 lda #$41
+	 sta $0
+
+	 jsr $e544
+
+	 lda #<intromsg
+	 ldy #>intromsg
+	 jsr $ab1e
+
+
+	 sei
+
+	jsr i2c_busscan
+
+	jsr test_touchscreen
+	
+;	jsr test_touch2
+	
+	rts
+
+i2c_busscan:
+	; Start on bus 0, address 0
+	 LDA #0
+	 sta $d6d0
+	 sta $d6d2
+
+try:
+	
+	 ; reset I2C bus
+	 lda #$08
+	 sta $d6d1
+	 lda #$09
+	 sta $d6d1
+
+l6:     
+	 lda $d6d1
+	 and #$c7
+	 cmp #$01
+	 bne l6
+
+	 ; wait for busy to assert
+	 LDA #$f
+	 sta $d6d1
+l1:     
+	 lda $d6d1
+	 and #$40
+	 beq l1
+
+	 ; make sure error flag clears
+l2:     
+         lda $d6d1
+	 tax
+	 and #$80
+	 bne l2
+
+	 ; wait for busy to clear
+l7:     
+	 lda $d6d1
+	 and #$40
+	 bne l7
+
+	 ; check if succeeded or not
+	 lda $d6d1
+	 bpl gotit
+
+resume:
+	 lda $d6d2
+	 clc
+	 adc #$02
+	 sta $d6d2
+l3:     
+	 cmp $d6d2
+;	 bne l3
+	 cmp #$00
+	 bne try
+
+notfound:
+	; no devices found on this bus, so try next bus.
+	; so far, we have only bus 0 and bus 1
+	inc $d6d0
+	lda $d6d0
+	cmp #1   ; only check bus 0, now that touch screen bus is wrapped     
+	bne try
+
+	lda #<donemsg
+	ldy #>donemsg
+	jsr $ab1e
+	rts
+
+gotit:
+	phx
+	phy
+	; found an I2C device -- so report it.
+	lda #<msg1
+	ldy #>msg1
+	jsr $ab1e
+	lda #0
+	ldx $d6d0
+	jsr $bdcd
+	lda #<msg2
+	ldy #>msg2
+	jsr $ab1e
+	lda #0
+	ldx $d6d2
+	jsr $bdcd
+	lda #<msg3
+	ldy #>msg3
+	jsr $ab1e
+	ply
+	plx
+
+	; Attempt to identify the I2C device.
+
+	jmp resume
+
+intromsg:   .byte "SCANNING I2C BUSSES..",13,0
+donemsg:    .byte "DONE.",13,0
+
+msg1:	.byte "  FOUND BUS ",0
+msg2:	.byte ", ADDRESS ",0
+msg3:   .byte ".",13,0
+
+touchmsg:
+	.byte "TOUCH SCREEN TO TEST.",13,0
+
+test_touch2:
+	ldx #$00
+tt2:	txa
+	ora #$80
+;	sta $d6bf
+	lda $d6bf
+	sta $0400,x
+	inx
+	jmp tt2
+
+
+
+test_touchscreen:
+
+	lda #<touchmsg
+	ldy #>touchmsg	
+	jsr $ab1e
+
+	; full brightness
+	lda #$ff
+	sta $d6f0
+
+	; invert X axis of touch pad, but not Y
+	lda #$40
+	sta $d6b0
+
+	; set X scale
+	; NOTE: Makes scale 0-799
+	lda #<1024
+	sta $d6b1
+	lda #>1024
+	sta $d6b2
+
+	; set Y scale
+	; NOTE: This makes Y scale 0-479. We have to reduce it before plotting
+	; (it must have full range, however, for the on-screen keyboard to work).
+	lda #<1024
+	sta $d6b3
+	lda #>1024
+	sta $d6b4
+
+	; set x delta
+	lda #<$f500
+	sta $d6b5
+	lda #>$f500
+	sta $d6b6
+	; set y delta
+	lda #<$0800
+	sta $d6b7
+	lda #>$0800
+	sta $d6b8
+
+	; Turn on visual keyboard
+	LDA #$7F
+	sta $d616
+	sta $d617
+	lda #$ff
+	sta $d615
+
+	; Turn on display of zoom of selection area
+	lda #$c0
+	sta $d60c
+	sta $d60b
+
+	; Set sprite colours
+	lda #$01
+	sta $d022
+	lda #$02
+	sta $d023
+
+	; borders set to LCD size, so we can see full range of movement
+
+	 ; The order below is a bit important.
+
+	 ; Enable sprite H640 mode
+ 	 LDA	 $D054
+	 ORA	 #$10
+	 STA	 $D054
+
+	 ; 1. Set horizontal border width
+	 LDA #$00
+	 STA $D05C
+	 STA $D05D
+	 lda #$1b
+	 sta $d011
+
+	 ; Make vertical borders a bit smaller
+	 ; (600 - 480)/2 = 60 top and 60 bottom
+	 ; then add fudge factor of 14 rasters
+	 LDA 	#<73
+	 STA	$D048 ; top border ends here
+	 LDA	#>73
+	 STA 	$D049 ; top border ends here
+	 LDA	#<554
+	 STA	$D04A
+	 LDA 	#>554
+	 STA	$D04B
+
+	; two sprites for touch points
+	lda #$03
+	sta $d015
+
+	LDA #14
+	sta 2040
+	sta 2041
+	ldx #62
+	lda #$00
+sl1:	sta $0380,x
+	dex
+	bpl sl1
+	; Draw little square sprite
+	; (need $ff for 4x320H pixels, as we put sprite in H640 mode)
+	lda #$ff
+	sta $0380
+	sta $0383
+	sta $0386
+	sta $0389
+
+loop:
+	ldy #0
+	lda #<regs
+	sta $fb
+	lda #>regs
+	sta $fc
+	ldx #15
+rnr:
+
+	; Read raw I2C bytes
+	; Touch panel is now using hardware accelerated I2C interface, so just
+	; ask and read out the bytes. No need to use the old i2c_read_registers routine.
+
+	ldy #$00
+tt2b:
+	tya
+	ora #$80 ; don't disable touch interface
+	sta $d6bf
+	lda $d6bf
+	sta ($fb),y
+	iny
+	cpy #$10
+	bne tt2b
+
+	; dump registers to screen
+;	ldy #0
+;pl:	lda ($fb),y
+;	sta $0478,y
+;	iny
+;	cpy #16
+;	bne pl
+
+	; reg 1 = gesture ID (seems to always be zero. maybe needs to be configured to be enabled)
+	; reg 2 = number of current touch points
+	; reg 3-8 = touch point 1
+	; reg 9-14 = touch point 2
+
+	lda #$00
+	sta $d015
+
+	; display raw I2C bytes
+	ldy #0
+ll99:	lda ($fb),y
+	sta $04f0,y
+	iny
+	cpy #16
+	bne ll99
+
+	; display digested status
+	ldy #0
+ll99c:	lda $d6b0,y
+	sta $0518,y
+	iny
+	cpy #16
+	bne ll99c
+
+	; First touch active?
+	lda $d6b0
+	and #$01
+;	beq n1
+
+	ldy #0
+	ldx #0
+	jsr parse_touch
+n1:
+	; second touch active?
+	lda $d6b0
+	and #$02
+;	bne loop
+
+	ldy #3
+	ldx #2
+	jsr parse_touch
+n2:
+
+	; report coordinates
+
+	lda #$13
+	jsr $ffd2
+	lda #$11
+	jsr $ffd2
+	lda #$11
+	jsr $ffd2
+	lda #$11
+	jsr $ffd2
+	lda #$11
+	jsr $ffd2
+
+	lda $d6bb
+	and #$0f
+	ldx $d6b9
+	jsr $bdcd
+	lda #$2c
+	jsr $ffd2
+	lda $d6bb
+	lsr
+	lsr
+	lsr
+	lsr
+	ldx $d6ba
+	jsr $bdcd
+	
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+	lda #$20
+	jsr $ffd2
+
+	jmp loop
+
+	rts
+
+parse_touch:
+	; For each touch point the raw data is:
+	; byte 0.7-6 = 00=down, 01=liftup, 10=press down start, 11=up
+	; byte 0.3-0 = MSB of Y position
+	; byte 1 = LSB of Y position
+	; byte 2.7-4 = touch id ($F = invalid)
+	; byte 2.3-0 = MSB of X position
+	; byte 3 = LSB of X position (not used?)
+	; byte 4 = pressure of touch (not used?)
+
+	; But at $d6b9-f, we have 2x 3 bytes:
+	; byte 0 = X LSB
+	; byte 1 = Y LSB
+	; byte 2 low nybl = X MSBs
+	; byte 2 high nybl = Y MSBs
+
+	lda $d6b9+0,y
+	sta $d000,x
+	; Divide Y position by two before using as sprite coordinate
+	lda $d6b9+1,y
+	lsr
+	sta $fe
+	lda $d6b9+2,y
+	asl
+	asl
+	asl
+	and #$80
+	ora $fe
+	sta $d001,x
+
+	; get X position (upper 8 bits only)
+	lda $d6b9+2,y
+	and #$f
+	sta $fe
+
+	; We are running sprites in H640 mode, so we can use values as-is
+	cpx #$00
+	bne sprite2
+
+sprite0:
+	lda $d6b0
+	and #$01
+	beq no0
+
+	lda #$01
+	tsb $d015
+no0:
+	; set super MSB	
+	lda #$01
+	trb $d05f
+	lda $d6b9+2,y
+	lsr
+	and #$01
+	tsb $d05f
+	; set normal sprite X MSB
+	lda #$01
+	trb $d010	
+	lda $d6b9+2,y
+	and #$01
+	tsb $d010
+
+	rts
+
+sprite2:
+	lda $d6b0
+	and #$02
+	beq no2
+
+	lda #$02
+	tsb $d015
+no2:
+
+	; set super MSB	
+	lda #$02
+	trb $d05f
+	lda $d6b9+2,y
+	and #$02
+	tsb $d05f
+	; set normal sprite X MSB
+	lda #$02
+	trb $d010	
+	lda $d6b9+2,y
+	and #$01
+	asl
+	tsb $d010
+
+	rts	
+
+i2c_read_registers:
+	; To read a register, we have to start by writing the address
+	; of the register, and then once that is done, ask to read.
+	; what we read back, is the content of the register.
+
+	; XXX - For now we have some bugs, so always read from register 0
+	; consecutively.
+
+	; start by writing the register we want to read
+	sty $d6d3
+	; reset bus and lodge request (leaving touch panel enabled)
+	lda #$08
+	sta $d6d1
+	lda #$09
+	sta $d6d1
+
+	; Write to set register number we want to read
+	lda #$0b
+	sta $d6d1
+
+	; Wait for busy to set
+rr1:	
+	lda $d6d1
+	and #$40
+	beq rr1
+
+	; Wait for busy to clear
+rr2:    
+	lda $d6d1
+	and #$40
+	bne rr2
+
+rloop:
+	; Then read
+	lda #$0f
+	sta $d6d1
+
+	; Wait for busy to set
+rr1c:	
+	lda $d6d1
+	and #$40
+	beq rr1c
+
+
+	; (as the continuation may cause BUSY to clear temporarily,
+	; make sure it stays clear.  With a continuation, the busy
+	; flag only clears for one 50MHz clock tick).
+rr3:   
+	lda $d6d1
+	bmi rerror
+	cmp #5
+	bne rr3
+rr3b:  
+	lda $d6d1
+	bmi rerror
+	cmp #5
+	bne rr3b
+
+	lda $d6d4
+	sta ($fb),y
+	iny
+	dex
+	bne rloop
+rerror:
+
+	rts
+
+regs:
+	.byte 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+	.scend

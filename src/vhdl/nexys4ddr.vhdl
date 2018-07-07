@@ -47,7 +47,7 @@ entity container is
          ----------------------------------------------------------------------
          -- VGA output
          ----------------------------------------------------------------------
-         vsync : out  STD_LOGIC;
+         vsync : out STD_LOGIC;
          hsync : out  STD_LOGIC;
          vgared : out  UNSIGNED (3 downto 0);
          vgagreen : out  UNSIGNED (3 downto 0);
@@ -92,11 +92,11 @@ entity container is
          ampPWM : out std_logic;
          ampSD : out std_logic;
 
-         tmpSDA : out std_logic;
-         tmpSCL : out std_logic;
+         tmpSDA : inout std_logic;
+         tmpSCL : inout std_logic;
          tmpInt : in std_logic;
          tmpCT : in std_logic;
-         
+
          ----------------------------------------------------------------------
          -- PS/2 keyboard interface
          ----------------------------------------------------------------------
@@ -104,20 +104,17 @@ entity container is
          ps2data : in std_logic;
 
          ----------------------------------------------------------------------
-         -- PMOD B for input PCB
-         ----------------------------------------------------------------------
-         jblo : inout std_logic_vector(4 downto 1) := (others => 'Z');
-         jbhi : inout std_logic_vector(10 downto 7) := (others => 'Z');
-         
-         ----------------------------------------------------------------------
-         -- PMOD A for general IO while debugging and testing
+         -- PMODs for LCD screen and associated things during testing
          ----------------------------------------------------------------------
          jalo : inout std_logic_vector(4 downto 1) := (others => 'Z');
          jahi : inout std_logic_vector(10 downto 7) := (others => 'Z');
-         jdlo : inout std_logic_vector(4 downto 1) := (others => 'Z');
-         jdhi : inout std_logic_vector(10 downto 7) := (others => 'Z');
+         jblo : inout std_logic_vector(4 downto 1) := (others => 'Z');
+         jbhi : inout std_logic_vector(10 downto 7) := (others => 'Z');
          jclo : inout std_logic_vector(4 downto 1) := (others => 'Z');
          jchi : inout std_logic_vector(10 downto 7) := (others => 'Z');
+         jdlo : inout std_logic_vector(4 downto 1) := (others => 'Z');
+         jdhi : inout std_logic_vector(10 downto 7) := (others => 'Z');
+         jxadc : inout std_logic_vector(7 downto 0) := (others => 'Z');
          
          ----------------------------------------------------------------------
          -- Flash RAM for holding config
@@ -190,6 +187,10 @@ architecture Behavioral of container is
   signal dummy_vgagreen : unsigned(3 downto 0);
   signal dummy_vgablue : unsigned(3 downto 0);
 
+  signal buffer_vgared : unsigned(7 downto 0);
+  signal buffer_vgagreen : unsigned(7 downto 0);
+  signal buffer_vgablue : unsigned(7 downto 0);
+  
   signal pixelclock : std_logic;
   signal cpuclock : std_logic;
   signal clock200 : std_logic;
@@ -263,6 +264,11 @@ architecture Behavioral of container is
   signal sawtooth_phase : integer := 0;
   signal sawtooth_counter : integer := 0;
   signal sawtooth_level : integer := 0;
+
+  signal lcd_pixel_strobe : std_logic;
+  signal lcd_hsync : std_logic;
+  signal lcd_vsync : std_logic;
+  signal lcd_display_enable : std_logic;
   
 begin
   
@@ -393,12 +399,13 @@ begin
       
       vsync           => vsync,
       hsync           => hsync,
-      vgared(7 downto 4)          => vgared,
-      vgared(3 downto 0)          => dummy_vgared,
-      vgagreen(7 downto 4)        => vgagreen,
-      vgagreen(3 downto 0)        => dummy_vgagreen,
-      vgablue(7 downto 4)         => vgablue,
-      vgablue(3 downto 0)         => dummy_vgablue,
+      lcd_vsync => lcd_vsync,
+      lcd_hsync => lcd_hsync,
+      lcd_display_enable => lcd_display_enable,
+      lcd_pixel_strobe => lcd_pixel_strobe,
+      vgared(7 downto 0)          => buffer_vgared,
+      vgagreen(7 downto 0)        => buffer_vgagreen,
+      vgablue(7 downto 0)         => buffer_vgablue,
 
       porta_pins => porta_pins,
       portb_pins => portb_pins,
@@ -433,12 +440,12 @@ begin
       aclInt1 => aclInt1,
       aclInt2 => aclInt2,
       
-      micData => micData,
+      micData0 => micData,
+      micData1 => '0', -- This board has only one microphone
       micClk => micClk,
       micLRSel => micLRSel,
 
-      ampPWM => ampPWM_internal,
-      ampPWM_l => led(13),
+      ampPWM_l => ampPWM_internal,
       ampPWM_r => led(14),
       ampSD => ampSD,
       
@@ -446,6 +453,21 @@ begin
       tmpSCL => tmpSCL,
       tmpInt => tmpInt,
       tmpCT => tmpCT,
+
+      touchSDA => jdlo(2),
+      touchSCL => jdlo(1),
+      lcdpwm => jdlo(3),
+      -- This is for modem as PCM master:
+      pcm_modem_clk_in => jdhi(7),
+      pcm_modem_sync_in => jdhi(8),
+      -- This is for modem as PCM slave:
+      -- (note that the EC25AU firmware we have doesn't work properly as a PCM
+      -- slave).
+      -- pcm_modem_clk => jdhi(7),
+      -- pcm_modem_sync => jdhi(8),
+      
+      pcm_modem1_data_out => jdhi(9),
+      pcm_modem1_data_in => jdhi(10),
       
       ps2data =>      ps2data,
       ps2clock =>     ps2clk,
@@ -453,10 +475,10 @@ begin
       pmod_clock => jblo(1),
       pmod_start_of_sequence => jblo(2),
       pmod_data_in(1 downto 0) => jblo(4 downto 3),
-      pmod_data_in(3 downto 2) => jbhi(8 downto 7),
-      pmod_data_out => jbhi(10 downto 9),
-      pmoda(3 downto 0) => jalo(4 downto 1),
-      pmoda(7 downto 4) => jahi(10 downto 7),
+      pmod_data_in(3 downto 2) => "00", -- jbhi(8 downto 7),
+--      pmod_data_out => jbhi(10 downto 9),
+--      pmoda(3 downto 0) => jalo(4 downto 1),
+--      pmoda(7 downto 4) => jahi(10 downto 7),
 
       uart_rx => jclo(1),
       uart_tx => jclo(2),
@@ -494,6 +516,18 @@ begin
       sseg_an => sseg_an
       );
 
+    vgared <= buffer_vgared(7 downto 4);
+    vgagreen <= buffer_vgagreen(7 downto 4);
+    vgablue <= buffer_vgablue(7 downto 4);
+  
+    -- VGA out on LCD panel
+    jalo <= std_logic_vector(buffer_vgablue(7 downto 4));
+    jahi <= std_logic_vector(buffer_vgared(7 downto 4));
+    jblo <= std_logic_vector(buffer_vgagreen(7 downto 4));
+    jbhi(7) <= lcd_pixel_strobe;
+    jbhi(8) <= lcd_hsync;
+    jbhi(9) <= lcd_vsync;
+    jbhi(10) <= lcd_display_enable;
   
   -- Hardware buttons for triggering IRQ & NMI
   irq <= not btn(0);
@@ -503,6 +537,10 @@ begin
   process (cpuclock)
   begin
     if rising_edge(cpuclock) then
+
+      -- No physical keyboard
+      portb_pins <= (others => '1');
+      
       -- Debug audio output
       if sw(7) = '0' then
         ampPWM <= ampPWM_internal;

@@ -80,9 +80,13 @@ void usage(void)
   fprintf(stderr,"  -m - Set video mode to Xorg style modeline.\n");
   fprintf(stderr,"  -o - Enable on-screen keyboard\n");
   fprintf(stderr,"  -d - Enable virtual D81 access\n");
+  fprintf(stderr,"  -p - Force PAL video mode\n");
+  fprintf(stderr,"  -n - Force NTSC video mode\n");
+  fprintf(stderr,"  -F - Force reset on start\n");
   fprintf(stderr,"  -t - Type text via keyboard virtualisation.\n");
   fprintf(stderr,"  -T - As above, but also provide carriage return\n");
   fprintf(stderr,"  -B - Set a breakpoint on synchronising, and then immediately exit.\n");
+  fprintf(stderr,"  -E - Enable streaming of video via ethernet.\n");
   fprintf(stderr,"  -f - Specify which FPGA to reconfigure when calling fpgajtag\n");
   fprintf(stderr,"  filename - Load and run this file in C64 mode before exiting.\n");
   fprintf(stderr,"\n");
@@ -107,6 +111,10 @@ int slow_write(int fd,char *d,int l)
   return 0;
 }
 
+int pal_mode=0;
+int ntsc_mode=0;
+int reset_first=0;
+
 int counter  =0;
 int fd=-1;
 int state=99;
@@ -114,6 +122,7 @@ int name_len,name_lo,name_hi,name_addr=-1;
 int do_go64=0;
 int do_run=0;
 int comma_eight_comma_one=0;
+int ethernet_video=0;
 int virtual_f011=0;
 int virtual_f011_pending=0;
 char *d81file=NULL;
@@ -332,6 +341,13 @@ int process_line(char *line,int live)
 	usleep(50000);
 	slow_write(fd,"t0\r",3); // and set CPU going
 	usleep(20000);
+	if (reset_first) { slow_write(fd,"!\r",2); sleep(1); }
+	if (pal_mode) { slow_write(fd,"sffd306f 80\r",12); usleep(20000); }
+	if (ntsc_mode) { slow_write(fd,"sffd306f 0\r",12); usleep(20000); }
+	if (ethernet_video) {
+	  slow_write(fd,"sffd36e1 29\r",12); // turn on video streaming over ethernet
+	  usleep(20000);
+	}
 	printf("Synchronised with monitor.\n");
 
 	if (break_point!=-1) {
@@ -746,8 +762,13 @@ int process_line(char *line,int live)
       if (!saw_c65_mode) fprintf(stderr,"MEGA65 is in C65 mode.\n");
       saw_c65_mode=1;
       if ((!mode_report)&&(!virtual_f011)&&(!type_text)) {
-	fprintf(stderr,"Exiting now that we are in C65 mode.\n");
-	exit(0);
+        if (do_run) {
+          // C65 mode stuff keyboard buffer
+
+        } else {
+  	  fprintf(stderr,"Exiting now that we are in C65 mode.\n");
+	  exit(0);
+        }
       }
     }    
   }
@@ -1141,14 +1162,18 @@ int main(int argc,char **argv)
   start_time=time(0);
   
   int opt;
-  while ((opt = getopt(argc, argv, "14l:s:B:b:c:f:k:rR:C:m:Mod:t:T:")) != -1) {
+  while ((opt = getopt(argc, argv, "14B:b:c:C:dEFf:k:l:m:MnoprR:s::t:T:")) != -1) {
     switch (opt) {
     case 'B': sscanf(optarg,"%x",&break_point); break;
+    case 'E': ethernet_video=1; break;
     case 'R': romfile=strdup(optarg); break;
     case 'C': charromfile=strdup(optarg); break;
     case 'c': colourramfile=strdup(optarg); break;
     case '4': do_go64=1; break;
     case '1': comma_eight_comma_one=1; break;
+    case 'p': pal_mode=1; break;
+    case 'n': ntsc_mode=1; break;
+    case 'F': reset_first=1; break; 
     case 'r': do_run=1; break;
     case 'f': fpga_serial=strdup(optarg); break;
     case 'l': strcpy(serial_port,optarg); break;
@@ -1261,7 +1286,7 @@ int main(int argc,char **argv)
 	if (gettime_ms()>last_check) {
           if(fast_mode) {
           
-            slow_write(fd,"mffd3077\r",9);
+	    //            slow_write(fd,"mffd3077\r",9);
 	    if( sdbuf_request_addr != 0) {
 	      char cmd[1024];
 	      sprintf(cmd,"M%x\r",WRITE_SECTOR_BUFFER_ADDRESS);
