@@ -63,27 +63,33 @@ architecture brutalist of frame_generator is
 
   signal lcd_inletterbox : std_logic := '0';
   
+  signal x_zero_drive : std_logic := '0';
+  signal y_zero_drive : std_logic := '0';
+  
 begin
 
   process (clock) is
   begin
 
     if rising_edge(clock) then
+      x_zero <= x_zero_drive;
+      y_zero <= y_zero_drive;
+
       if x < frame_width then
         x <= x + 1;
         -- make the x_zero signal last a bit longer, to make sure it gets captured.
         if x = 3 then
-          x_zero <= '0';
+          x_zero_drive <= '0';
         end if;
       else
         x <= 0;
-        x_zero <= '1';
+        x_zero_drive <= '1';
         if y < frame_height then
           y <= y + 1;
-          y_zero <= '0';
+          y_zero_drive <= '0';
         else
           y <= 0;
-          y_zero <= '1';
+          y_zero_drive <= '1';
         end if;
       end if;
 

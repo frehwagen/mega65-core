@@ -95,6 +95,7 @@ entity uart_monitor is
     monitor_mem_stage_trace_mode : out std_logic := '0';
     monitor_mem_trace_mode : out std_logic := '0';
     monitor_mem_trace_toggle : out std_logic := '0'
+
     );
 end uart_monitor;
 
@@ -197,7 +198,7 @@ architecture behavioural of uart_monitor is
   constant requestTimeoutMessage : string := crlf & "?REQUEST TIMEOUT  ERROR" & crlf;
   constant replyTimeoutMessage : string := crlf & "?REPLY TIMEOUT  ERROR" & crlf;
 
-  constant registerMessage : string := crlf & "PC   A  X  Y  Z  B  SP   MAPL MAPH LAST-OP     P  P-FLAGS   RGP uS IO" & crlf;
+  constant registerMessage : string := crlf & "PC   A X  Y Z  B  SP   MAPL MAPH LAST-OP P  P-FLAGS   RGP uS IO" & crlf;
   
   type monitor_state is (Reseting,
                          PrintBanner,
@@ -387,6 +388,12 @@ begin
         terminal_emulator_just_sent <= '1';
         terminal_emulator_ready_counter <= 511;
         
+      else
+	monitor_char_out <= unsigned(to_std_logic_vector(char));
+	monitor_char_valid <= '0';
+
+	terminal_emulator_just_sent <= '0';
+        terminal_emulator_ready_counter <= 511;
       end if;
     end output_char;
     
@@ -699,9 +706,9 @@ begin
       end if;
       -- Clear just-sent flag only when the terminal emulator has accepted the
       -- character by marking not-ready
-      if terminal_emulator_ready = '0' then
+      if terminal_emulator_ready = '1' then
+	monitor_char_valid <= '0';
         terminal_emulator_just_sent <= '0';
-        monitor_char_valid <= '0';
       end if;
 
       bit_rate_divisor <= bit_rate_divisor_internal;
@@ -901,8 +908,10 @@ begin
               -- If there is a character waiting
               if protected_hardware_in(6)='0' then
                 in_matrix_mode <= '0';
+		rx_acknowledge <= '0';
               end if;
               if protected_hardware_in(6)='1' and in_matrix_mode = '0' then
+                -- XXX WE need to delay printing the banner to give the terminal emulator time to get ready.
                 state <= PrintBanner;
                 in_matrix_mode <= '1';
               elsif monitor_char_toggle /= monitor_char_toggle_last then
@@ -931,8 +940,6 @@ begin
               elsif uart_char_valid = '0' then
                 uart_char_processed <= '0';
               end if;
-              
-              
               if trace_continuous='1' then
                 state <= EnterPressed;
               end if;
@@ -1351,7 +1358,10 @@ begin
             when ShowMemory6 => print_hex_addr(target_address,ShowMemory7);
             when ShowMemory7 =>
               if byte_number = 16 then
-                if line_number = 31 then
+                -- Display only 24 lines, so that it fits on one screen of the matrix mode
+                -- terminal emulator
+                if line_number = 24 then
+                  target_address <= target_address + 16;                    
                   state<=NextCommand;
                 else
                   if tx_ready='1' then
@@ -1362,7 +1372,13 @@ begin
                   end if;
                 end if;
               else
-                try_output_char(' ',ShowMemory8);
+                -- Display space between every second byte pair only, so that it fits in
+                -- the 50 column matrix mode terminal display.
+                if to_integer(to_unsigned(byte_number,1)) = 1 then
+                  try_output_char(' ',ShowMemory8);
+                else
+                  state <= ShowMemory8;
+                end if;
               end if;
             when ShowMemory8 =>
               byte_number <= byte_number + 1;
@@ -1438,7 +1454,7 @@ begin
             when ShowRegisters5 =>
               -- Accumulator
               print_hex_byte(history_buffer(15 downto 8),ShowRegisters6);
-            when ShowRegisters6 => try_output_char(' ',ShowRegisters7);
+            when ShowRegisters6 => state <= ShowRegisters7; --try_output_char(' ',ShowRegisters7);
             when ShowRegisters7 =>
               -- X Register
               print_hex_byte(history_buffer(23 downto 16),ShowRegisters8);
@@ -1446,7 +1462,7 @@ begin
             when ShowRegisters9 =>
               -- Y Register
               print_hex_byte(history_buffer(31 downto 24),ShowRegisters10);
-            when ShowRegisters10 => try_output_char(' ',ShowRegisters11);
+            when ShowRegisters10 => state <= ShowRegisters11; --try_output_char(' ',ShowRegisters11);
             when ShowRegisters11 =>
               -- Z register
               print_hex_byte(history_buffer(39 downto 32),ShowRegisters12);

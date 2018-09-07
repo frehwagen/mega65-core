@@ -5,7 +5,7 @@ use work.debugtools.all;
 
 entity visual_keyboard is
   port (
-    native_x_640 : in integer;
+    native_x_800 : in integer;
     native_y_200 : in integer;
     native_y_400 : in integer;
     pixel_x_640_in : in integer;
@@ -91,7 +91,7 @@ architecture behavioural of visual_keyboard is
   signal last_was_640 : std_logic := '0';
   signal active : std_logic := '0';
   signal last_pixel_x_640 : integer := 0;
-  signal last_native_x_640 : integer := 0;
+  signal last_native_x_800 : integer := 0;
   signal last_native_y_400 : integer := 0;
   signal key_box_counter : integer := 1;
   signal key_same_as_last : std_logic := '0';
@@ -220,7 +220,7 @@ begin
   begin
     if rising_edge(pixelclock) then
 
-      last_native_x_640 <= native_x_640;
+      last_native_x_800 <= native_x_800;
       last_native_y_400 <= native_y_400;
       
       if alternate_keyboard='1' then
@@ -269,7 +269,7 @@ begin
       end if;
 
       -- Work out when to record for zoom display
-      if native_x_640 = zoom_origin_x then
+      if native_x_800 = zoom_origin_x then
         zoom_recording <= 32;
         zoom_record_x <= to_unsigned(0,5);
       end if;
@@ -304,7 +304,7 @@ begin
           zoom_wdata(23 downto 16) <= vgablue_in;
         end if;
         zoom_we <= '1';
-        if last_native_x_640 /= native_x_640 then
+        if last_native_x_800 /= native_x_800 then
           zoom_recording <= zoom_recording - 1;
           zoom_record_x <= zoom_record_x + 1;
         end if;
@@ -313,7 +313,7 @@ begin
       end if;
 
       -- And similarly for playing back the zoomed display
-      if native_x_640 = zoom_display_x then
+      if native_x_800 = zoom_display_x then
         zoom_play_x <= "000000";
         zoom_playback_enx <= '1';
       end if;
@@ -343,7 +343,7 @@ begin
           zoom_border_pixel <= '0';
         end if;
         zoom_raddr <= to_integer(zoom_play_y(5 downto 1)&zoom_play_x(5 downto 1));
-        if native_x_640 /= last_native_x_640 then
+        if native_x_800 /= last_native_x_800 then
           if zoom_play_x /="111111" then
             zoom_play_x <= zoom_play_x + 1;
           else
@@ -358,11 +358,11 @@ begin
       
       -- Check if current touch events correspond to any key
       if visual_keyboard_enable='1' then
-        if native_x_640 = touch1_x and ycounter_in = touch1_y and touch1_valid='1' then
+        if native_x_800 = touch1_x and ycounter_in = touch1_y and touch1_valid='1' then
           touch1_key_internal <= current_matrix_id;
 --          report "touch1 key = $" & to_hstring(current_matrix_id);
         end if;
-        if native_x_640 = touch2_x and ycounter_in = touch2_y and touch2_valid='1' then
+        if native_x_800 = touch2_x and ycounter_in = touch2_y and touch2_valid='1' then
           touch2_key_internal <= current_matrix_id;
 --          report "touch2 key = $" & to_hstring(current_matrix_id);
         end if;
@@ -743,13 +743,13 @@ begin
         vk_pixel <= "00";
       end if;
 
-      if touch1_y = ycounter_in and touch1_x = native_x_640 then
+      if touch1_y = ycounter_in and touch1_x = native_x_800 then
 --        report "touch1 @ " & integer'image(to_integer(touch1_x))
 --          & "," & integer'image(to_integer(touch1_y));
         vgared_out <= x"00";
         vgagreen_out <= x"00";
         vgablue_out <= x"00";
-      elsif touch2_y = ycounter_in and touch2_x = native_x_640 then
+      elsif touch2_y = ycounter_in and touch2_x = native_x_800 then
 --        report "touch2 @ " & integer'image(to_integer(touch2_x))
 --          & "," & integer'image(to_integer(touch2_y));
         vgared_out <= x"FF";

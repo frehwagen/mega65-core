@@ -7,7 +7,7 @@ if { [info exists ::origin_dir_loc] } {
 }
 
 # Set the project name
-set project_name "nexys4ddr"
+set project_name "nocpu"
 
 # Use project name variable, if specified in the tcl shell
 if { [info exists ::user_project_name] } {
@@ -15,7 +15,7 @@ if { [info exists ::user_project_name] } {
 }
 
 variable script_file
-set script_file "nexys4ddr.tcl"
+set script_file "nocpu.tcl"
 
 # Help information for this script
 proc help {} {
@@ -622,7 +622,7 @@ if { [ string equal [get_report_configs -of_objects [get_runs impl_1] impl_1_ini
 }
 set obj [get_report_configs -of_objects [get_runs impl_1] impl_1_init_report_timing_summary_0]
 if { $obj != "" } {
-set_property -name "is_enabled" -value "0" -objects $obj
+set_property -name "is_enabled" -value "1" -objects $obj
 
 }
 # Create 'impl_1_opt_report_drc_0' report (if not found)

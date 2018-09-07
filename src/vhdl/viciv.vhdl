@@ -109,6 +109,8 @@ entity viciv is
     lcd_hsync : out std_logic;
     lcd_display_enable : out std_logic;
     lcd_pixel_strobe : out std_logic;
+    lcd_in_letterbox : out std_logic;
+
     vgared : out  UNSIGNED (7 downto 0);
     vgagreen : out  UNSIGNED (7 downto 0);
     vgablue : out  UNSIGNED (7 downto 0);
@@ -126,7 +128,7 @@ entity viciv is
     pixel_x_640 : out integer := 0;
     -- And pixel X counter scaled to actual video mode (typically 800)
     -- (and corrected for video pipeline depth)
-    native_x_640 : out integer := 0;
+    native_x_800 : out integer := 0;
     native_y_200 : out integer := 0;
     native_y_400 : out integer := 0;
     -- Scale for 200 and 400px high modes (used by compositors)
@@ -277,7 +279,7 @@ architecture Behavioral of viciv is
   
   constant frame_v_front : integer := 1;
 
-  signal lcd_in_letterbox : std_logic := '1';
+  signal lcd_in_letterbox_internal : std_logic := '1';
   
   -- Frame generator counters
   -- DEBUG: Start frame at a point that will soon trigger a badline
@@ -367,6 +369,11 @@ architecture Behavioral of viciv is
   signal final_screen_row_fetch_address : unsigned(19 downto 0) := to_unsigned(0,20);
   signal final_ramdata : unsigned(7 downto 0) := to_unsigned(0,8);
 
+  signal vgared_driver : unsigned(7 downto 0);
+  signal vgagreen_driver : unsigned(7 downto 0);
+  signal vgablue_driver : unsigned(7 downto 0);
+
+  signal pixelclock_select_driver : std_logic_vector(7 downto 0) := x"bc";
   -- Internal registers for drawing a single raster of character data to the
   -- raster buffer.
   signal character_number : unsigned(8 downto 0) := to_unsigned(0,9);
@@ -2334,7 +2341,7 @@ begin
                                                   elsif register_number=80 then
                                         -- @IO:GS $D050 VIC-IV read horizontal position (LSB) (READ) xcounter
                                         -- @IO:GS $D050 VIC-IV pixel clock configuration (WRITE ONLY)
-                                                    pixelclock_select <= fastio_wdata;
+                                                    pixelclock_select_driver <= fastio_wdata;
                                                     pixelclock_select_internal <= fastio_wdata;
                                                   elsif register_number=81 then
                                         -- @IO:GS $D051 VIC-IV read horizontal position (MSB) (READ) xcounter
@@ -2477,7 +2484,7 @@ begin
                                                         vicii_max_raster <= pal_max_raster;
                                         -- Set 30MHz pixel clock for PAL
                                                         pixelclock_select_internal <= x"bc";
-                                                        pixelclock_select <= x"bc";
+                                                        pixelclock_select_driver <= x"bc";
                                         -- VSYNC is negative for 50Hz (required for some monitors)
                                                         hsync_polarity <= '0';
                                                         vsync_polarity <= '1';
@@ -2506,7 +2513,7 @@ begin
                                                         vicii_max_raster <= ntsc_max_raster;
                                         -- Set 30MHz pixel clock for PAL
                                                         pixelclock_select_internal <= x"bc";
-                                                        pixelclock_select <= x"bc";
+                                                        pixelclock_select_driver <= x"bc";
                                                         hsync_polarity <= '0';
                                                         vsync_polarity <= '1';
 
@@ -2534,7 +2541,7 @@ begin
                                                         vsync_polarity <= '0';
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
-                                                        pixelclock_select <= x"3e";
+                                                        pixelclock_select_driver <= x"3e";
 
                                                         chargen_x_pixels <= 2;
                                                         chargen_x_pixels_sub <= 216/2;
@@ -2562,7 +2569,7 @@ begin
 
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
-                                                        pixelclock_select <= x"3e";
+                                                        pixelclock_select_driver <= x"3e";
                                                         
                                                         chargen_x_pixels <= 2;
                                                         chargen_x_pixels_sub <= 216/2;
@@ -2588,7 +2595,7 @@ begin
 
                                         -- Set 40MHz pixel clock for NTSC
                                                         pixelclock_select_internal <= x"3e";
-                                                        pixelclock_select <= x"3e";
+                                                        pixelclock_select_driver <= x"3e";
                                                         
                                                         chargen_x_pixels <= 2;
                                                         chargen_x_pixels_sub <= 216/2;
@@ -2662,7 +2669,7 @@ begin
                                         -- @IO:GS $D07C.5 VIC-IV vsync polarity
                                                     vsync_polarity <= fastio_wdata(5);
                                         -- @IO:GS $D07C.6-7 VIC-IV pixel clock select (30,33,40 or 50MHz)
-                                                    pixelclock_select(1 downto 0) <= fastio_wdata(7 downto 6);
+                                                    pixelclock_select_driver(1 downto 0) <= fastio_wdata(7 downto 6);
                                                     pixelclock_select_internal(1 downto 0) <= fastio_wdata(7 downto 6);
                                                   elsif register_number=125 then
                                         -- @IO:GS $D07D VIC-IV debug X position (LSB)
@@ -2708,6 +2715,13 @@ begin
     variable next_glyph_colour_temp : std_logic_vector(7 downto 0) := (others => '0');
   begin    
     if rising_edge(pixelclock) and all_pause='0' then
+
+      lcd_in_letterbox <= lcd_in_letterbox_internal;
+
+      pixelclock_select <= pixelclock_select_driver;
+      vgared <= vgared_driver;
+      vgagreen <= vgagreen_driver;
+      vgablue <= vgablue_driver;
 
       sprite_data_offsets(sprite_number_for_data_rx) <= sprite_data_offset_rx;
       -- Ask for the next one (8 sprites + 8 C65 bitplanes)
@@ -2761,7 +2775,7 @@ begin
 
       -- XXX Why do we need these fudge factors to make everything line up?
       -- Subtract 10 for video pipeline depth?
-      native_x_640 <= to_integer(vicii_xcounter_640 - 10);
+      native_x_800 <= to_integer(vicii_xcounter_640 - 10);
       -- Subtract 34 for some reason?
       native_y_200 <= to_integer(vicii_ycounter - 34);
       native_y_400 <= to_integer(displayy);
@@ -2919,7 +2933,8 @@ begin
               <= vicii_xcounter_sub640 + to_integer(sprite_x_scale_640);
           end if;
         end if;
-      else
+      end if;
+      if external_frame_x_zero='1' then
         -- End of raster reached.
         -- Bump raster number and start next raster.
         report "XZERO: ycounter=" & integer'image(to_integer(ycounter));
@@ -2944,76 +2959,71 @@ begin
         chargen_active <= '0';
         chargen_active_soon <= '0';
 --        if ycounter /= to_integer(frame_height) and external_frame_y_zero='0' then
-        if xcounter > 255 then
-          if external_frame_y_zero='0' then
-            report "XZERO: incrementing ycounter from " & integer'image(to_integer(ycounter));
-            ycounter <= ycounter + 1;
 
-            displaycolumn0 <= '1';
-            displayy <= displayy + 1;
-            if displayy(4)='1' then
-              displayline0 <= '0';            
-            end if;
-            
-            if vicii_ycounter_phase = vicii_ycounter_max_phase then
-              if to_integer(vicii_ycounter) /= vicii_max_raster then
-                if ycounter >= vsync_delay_drive then
-                  vicii_ycounter <= vicii_ycounter + 1;
-                  vicii_ycounter_v400 <= vicii_ycounter_v400 + 1;
-                end if;
-              end if;
-              vicii_ycounter_phase <= (others => '0');
-              -- All visible rasters are now equal height
-              -- (we take up the slack using vertical_flyback fast raster stepping,
-              -- and allow arbitrary setting of first raster of the VGA frame).
-              vicii_ycounter_max_phase <= vicii_ycounter_scale;
-            else
-              -- In the middle of a VIC-II logical raster, so just increase phase.
-              vicii_ycounter_phase <= vicii_ycounter_phase + 1;
-              if to_integer(vicii_ycounter_phase) =  to_integer(vicii_ycounter_max_phase(3 downto 1)) then
-                vicii_ycounter_v400 <= vicii_ycounter_v400 + 1;
-              end if;
-            end if;
+        if xcounter > 255 and external_frame_y_zero='0' then
+          report "XZERO: incrementing ycounter from " & integer'image(to_integer(ycounter));
+          ycounter <= ycounter + 1;
 
-            -- Make VIC-II triggered raster interrupts edge triggered, since one
-            -- emulated VIC-II raster is ~63*48 = ~3,000 cycles, and many C64
-            -- raster routines may finish in that time, and might get confused if
-            -- a raster interrupt gets retriggered too soon.
-            if (vicii_is_raster_source='1') and (vicii_ycounter = vicii_raster_compare(8 downto 0)) and last_vicii_ycounter /= vicii_ycounter then
-              irq_raster <= '1';
-            end if;
-            last_vicii_ycounter <= vicii_ycounter;
-            -- However, if a raster interrupt is being triggered from a VIC-IV
-            -- physical raster, then there is no need to make raster IRQs edge triggered
-            if (vicii_is_raster_source='0') and (ycounter = vicii_raster_compare) then
-              irq_raster <= '1';
-            end if;
-          else
-            -- Start of next frame
-            ycounter <= (others =>'0');
-            report "LEGACY: chargen_y_sub = 0, first_card_of_row = 0 due to start of frame";
-            chargen_y_sub <= (others => '0');
-            next_card_number <= (others => '0');
-            first_card_of_row <= (others => '0');
-
-            displayy <= (others => '0');
-            vertical_flyback <= '0';
-            displayline0 <= '1';
-            indisplay := '0';
-            report "clearing indisplay because xcounter=0" severity note;
-            screen_row_address <= screen_ram_base(19 downto 0);
-
-            -- Reset VIC-II raster counter to first raster for top of frame
-            -- (the preceeding rasters occur during vertical flyback, in case they
-            -- have interrupts triggered on them).
-            vicii_ycounter_phase <= to_unsigned(1,4);
-            vicii_ycounter <= vicii_first_raster;
-            vicii_ycounter_v400 <= (others =>'0');
-            vicii_ycounter_phase_v400 <= to_unsigned(1,4);
-
+          displaycolumn0 <= '1';
+          displayy <= displayy + 1;
+          if displayy(4)='1' then
+            displayline0 <= '0';            
           end if;
-        end if;
+            
+          if vicii_ycounter_phase = vicii_ycounter_max_phase then
+            if to_integer(vicii_ycounter) /= vicii_max_raster and ycounter >= vsync_delay_drive then
+               vicii_ycounter <= vicii_ycounter + 1;
+               vicii_ycounter_v400 <= vicii_ycounter_v400 + 1;
+            end if;
+            vicii_ycounter_phase <= (others => '0');
+            -- All visible rasters are now equal height
+            -- (we take up the slack using vertical_flyback fast raster stepping,
+            -- and allow arbitrary setting of first raster of the VGA frame).
+            vicii_ycounter_max_phase <= vicii_ycounter_scale;
+          else
+            -- In the middle of a VIC-II logical raster, so just increase phase.
+            vicii_ycounter_phase <= vicii_ycounter_phase + 1;
+            if to_integer(vicii_ycounter_phase) =  to_integer(vicii_ycounter_max_phase(3 downto 1)) then
+              vicii_ycounter_v400 <= vicii_ycounter_v400 + 1;
+            end if;
+          end if;
+
+          -- Make VIC-II triggered raster interrupts edge triggered, since one
+          -- emulated VIC-II raster is ~63*48 = ~3,000 cycles, and many C64
+          -- raster routines may finish in that time, and might get confused if
+          -- a raster interrupt gets retriggered too soon.
+          if (vicii_is_raster_source='1') and (vicii_ycounter = vicii_raster_compare(8 downto 0)) and last_vicii_ycounter /= vicii_ycounter then
+            irq_raster <= '1';
+          end if;
+          last_vicii_ycounter <= vicii_ycounter;
+          -- However, if a raster interrupt is being triggered from a VIC-IV
+          -- physical raster, then there is no need to make raster IRQs edge triggered
+          if (vicii_is_raster_source='0') and (ycounter = vicii_raster_compare) then
+            irq_raster <= '1';
+          end if;
+        elsif external_frame_y_zero='1' then
+          -- Start of next frame
+          ycounter <= (others =>'0');
+          report "LEGACY: chargen_y_sub = 0, first_card_of_row = 0 due to start of frame";
+          chargen_y_sub <= (others => '0');
+          next_card_number <= (others => '0');
+          first_card_of_row <= (others => '0');
+          displayy <= (others => '0');
+          vertical_flyback <= '0';
+          displayline0 <= '1';
+          indisplay := '0';
+          report "clearing indisplay because xcounter=0" severity note;
+          screen_row_address <= screen_ram_base(19 downto 0);
+          -- Reset VIC-II raster counter to first raster for top of frame
+          -- (the preceeding rasters occur during vertical flyback, in case they
+          -- have interrupts triggered on them).
+          vicii_ycounter_phase <= to_unsigned(1,4);
+          vicii_ycounter <= vicii_first_raster;
+          vicii_ycounter_v400 <= (others =>'0');
+          vicii_ycounter_phase_v400 <= to_unsigned(1,4);
+         end if;
       end if;
+
       
       if xcounter<frame_h_front then
         xfrontporch <= '1';
@@ -3109,14 +3119,14 @@ begin
       lcd_vsync <= vsync_drive;
       -- LCD letter box starts after half the excess raster lines are gone, so
       -- that it is vertically centred on the 800x480 display.
-      if to_integer(ycounter) = (to_integer(vsync_delay_drive) + (to_integer(display_height) - 480)/2) then
-        lcd_in_letterbox <= '1';
+      if to_integer(ycounter) = (to_integer(vsync_delay_drive) + (to_integer(display_height) - 355)/2) then
+        lcd_in_letterbox_internal <= '1';
       elsif vertical_flyback = '1' then
-        lcd_in_letterbox <= '0';
+        lcd_in_letterbox_internal <= '0';
       end if;
       -- Gate LCD pixel enable based on whether we are in the active part of      
       -- the scan, and within the LCD letter box region.
-      if postsprite_inborder='0' and lcd_in_letterbox='1' then
+      if postsprite_inborder='0' and lcd_in_letterbox_internal='1' then
         lcd_display_enable <= '1';
       else
         lcd_display_enable <= '0';
@@ -3501,14 +3511,14 @@ begin
              or (motor='1')) then
         report "drawing drive led OSD" severity note;
         drive_led_out <= '1';
-        vgared <= x"FF";
-        vgagreen <= x"00";
-        vgablue <= x"00";
+        vgared_driver <= x"FF";
+        vgagreen_driver <= x"00";
+        vgablue_driver <= x"00";
       else
         drive_led_out <= '0';
-        vgared <= vga_out_red(7 downto 0);
-        vgagreen <= vga_out_green(7 downto 0);
-        vgablue <= vga_out_blue(7 downto 0);
+        vgared_driver <= vga_out_red(7 downto 0);
+        vgagreen_driver <= vga_out_green(7 downto 0);
+        vgablue_driver <= vga_out_blue(7 downto 0);
       end if;
 
       --------------------------------------------------------------------------

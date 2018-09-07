@@ -58,8 +58,10 @@ entity matrix_rain_compositor is
     ycounter_out : out unsigned(11 downto 0);
     -- Scaled horizontal position (for virtual 640H
     -- operation, regardless of physical video mode)
+    pixel_x_800 : in integer;
     pixel_x_640 : in integer;
     pixel_x_640_out : out integer;
+    lcd_in_letterbox : in std_logic;
     
     -- Remote memory access interface to visual keyboard for
     -- character set.
@@ -135,8 +137,8 @@ architecture rtl of matrix_rain_compositor is
   signal in_transition : std_logic := '0';
   signal lfsr_advance_counter : integer range 0 to 31 := 0;
   signal last_hsync : std_logic := '1';
-  signal last_vsync : std_logic := '1';
-  signal last_pixel_x_640 : integer := 0;
+  signal last_letterbox : std_logic := '1';
+  signal last_pixel_x_800 : integer := 0;
   
   signal drop_start : integer range 0 to 63 := 1;
   signal drop_end : integer range 0 to 63 := 1;
@@ -244,14 +246,14 @@ begin  -- rtl
       hsync_out <= hsync_in;
       vsync_out <= vsync_in;
       last_hsync <= hsync_in;
-      last_vsync <= vsync_in;
+      last_letterbox <= lcd_in_letterbox;
 
       drop_row <= (to_integer(ycounter_in)+0)/16;
 
       if matrix_fetch_chardata = '1' then
-        if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+        if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
           report
-            "x=" & integer'image(pixel_x_640) & ": " &
+            "x=" & integer'image(pixel_x_800) & ": " &
             "Reading char data = $" & to_hstring(screenram_rdata); 
         end if;
         next_char_bits <= std_logic_vector(screenram_rdata);
@@ -264,9 +266,9 @@ begin  -- rtl
       -- This module must draw the matrix rain, as well as the matrix mode text
       -- mode terminal interface.
 
-      if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+      if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
         report
-          "x=" & integer'image(pixel_x_640) & ": " &
+          "x=" & integer'image(pixel_x_800) & ": " &
           "ycounter_in = " & integer'image(to_integer(ycounter_in))
           & ", char_ycounter = " & integer'image(to_integer(char_ycounter))
           & ", char_bit_count = " & integer'image(char_bit_count);
@@ -289,9 +291,9 @@ begin  -- rtl
         end if;
         screenram_we <= '0';
         screenram_busy := '1';
-        if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+        if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
           report
-            "x=" & integer'image(pixel_x_640) & ": " &
+            "x=" & integer'image(pixel_x_800) & ": " &
             "Fetching character from address $"
             & to_hstring(char_screen_address);
         end if;
@@ -306,17 +308,17 @@ begin  -- rtl
                           +to_integer(char_ycounter(3 downto 1));
         screenram_we <= '0';
         screenram_busy := '1';
-        if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+        if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
           report
-            "x=" & integer'image(pixel_x_640) & ": " &
+            "x=" & integer'image(pixel_x_800) & ": " &
             "Reading char #$" & to_hstring(screenram_rdata);
         end if;
       else
         if matrix_fetch_chardata = '1' then
           matrix_fetch_chardata <= '0';
-          if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+          if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
             report
-              "x=" & integer'image(pixel_x_640) & ": " &
+              "x=" & integer'image(pixel_x_800) & ": " &
               "Reading next_char_bits = $"
               & to_hstring(screenram_rdata);
           end if;
@@ -424,15 +426,18 @@ begin  -- rtl
               -- advance to next line (and possibly scroll)
               te_cursor_x <= 0;
               if te_cursor_y < te_y_max then
+                -- No need to scroll yet
                 te_cursor_y <= te_cursor_y + 1;
                 te_cursor_address <= te_cursor_address + 1;
                 terminal_emulator_fast <= '1';
               else
+                -- We need to scroll
                 terminal_emulator_ready <= '0';
                 scroll_terminal_up <= '1';
                 erase_address
                   <= 4096 - (te_y_max+1) * te_line_length;
                 terminal_emulator_fast <= '0';
+                te_cursor_address <= te_cursor_address - te_line_length + 1;
               end if;
             end if;
           when x"08" =>
@@ -470,7 +475,9 @@ begin  -- rtl
               & ", te_cursor_x = " & integer'image(te_cursor_x)
               & ", te_cursor_y = " & integer'image(te_cursor_y)
               & ", te_screen_start = "
-              & integer'image(te_screen_start);
+              & integer'image(te_screen_start)
+              & ", te_header_start = "
+              & integer'image(te_header_start);
             screenram_addr <= te_cursor_address;
             screenram_wdata <= monitor_char_in;
             -- Prevent overwriting font
@@ -484,6 +491,7 @@ begin  -- rtl
             if te_cursor_x < te_x_max then
               -- stay on same line
               te_cursor_x <= te_cursor_x + 1;
+              report "increment te_cursor_address, because cursor_x < x_max";
               te_cursor_address <= te_cursor_address + 1;
               terminal_emulator_fast <= '1';
             else
@@ -491,6 +499,9 @@ begin  -- rtl
               te_cursor_x <= 0;
               if te_cursor_y < te_y_max then
                 te_cursor_y <= te_cursor_y + 1;
+                report "increment te_cursor_address, because not yet at bottom of screen "
+                  & "(te_cursor_y=" & integer'image(te_cursor_y)
+                  & ", te_y_max=" & integer'image(te_y_max) & ")";
                 te_cursor_address <= te_cursor_address + 1;
                 terminal_emulator_fast <= '1';
               else
@@ -498,6 +509,7 @@ begin  -- rtl
                 scroll_terminal_up <= '1';
                 erase_address <= te_screen_start;
                 terminal_emulator_fast <= '0';
+                te_cursor_address <= te_cursor_address - te_line_length + 1;
               end if;
             end if;
         end case;
@@ -558,7 +570,7 @@ begin  -- rtl
         end if;
       end if;
 
-      last_pixel_x_640 <= pixel_x_640;
+      last_pixel_x_800 <= pixel_x_800;
       if true then
         -- Text terminal display
         -- We need to read the current char cell to know which
@@ -566,15 +578,15 @@ begin  -- rtl
         -- data.  A complication is that we have to deal with
         -- contention on the BRAM interface, so we ideally need to
         -- sequence the requests a little carefully.
-        if hsync_in = '1' then
+        if pixel_x_800 = 0 then
           char_bit_count <= 0;
-          if last_hsync = '0' then
+          if last_pixel_x_800 /= 0 then
             fetch_next_char <= '1';
           end if;
           -- reset fetch address to start of line, unless
           -- we are advancing to next line
           -- XXX doesn't yet support double-high chars
-          if last_hsync = '0' then
+          if last_pixel_x_800 /= 0 then
             if char_ycounter /= 15 then
               char_screen_address <= line_screen_address;
               char_ycounter <= char_ycounter + 1;
@@ -587,9 +599,9 @@ begin  -- rtl
           end if;
         elsif char_bit_count = 0 then
           -- Request next character
-          if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+          if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
             report
-              "x=" & integer'image(pixel_x_640) & ": " &
+              "x=" & integer'image(pixel_x_800) & ": " &
               "char_bits becomes $" & to_hstring(next_char_bits);
           end if;
           char_bits <= std_logic_vector(next_char_bits);
@@ -599,13 +611,13 @@ begin  -- rtl
           char_bit_count <= 16;
         else
           -- rotate bits for terminal chargen every 2 640H pixels
-          if (pixel_x_640 mod 2) = 0 and char_bit_count /= 1
-            and pixel_x_640 /= last_pixel_x_640 then
+          if (pixel_x_800 mod 2) = 0 and char_bit_count /= 1
+            and pixel_x_800 /= last_pixel_x_800 then
             char_bits(7 downto 1) <= char_bits(6 downto 0);
             char_bits(0) <= char_bits(7);
           end if;
-          if pixel_x_640 /= last_pixel_x_640 
-            and pixel_x_640 /= last_pixel_x_640 then
+          if pixel_x_800 /= last_pixel_x_800 
+            and pixel_x_800 /= last_pixel_x_800 then
             char_bit_count <= char_bit_count - 1;
           end if;
         end if; 
@@ -710,13 +722,13 @@ begin  -- rtl
           glyph_bit_count <= 16;
         else
           -- rotate bits for rain chargen
-          if (pixel_x_640 mod 2) = 0 and char_bit_count /= 1
-            and pixel_x_640 /= last_pixel_x_640 then
+          if (pixel_x_800 mod 2) = 0 and char_bit_count /= 1
+            and pixel_x_800 /= last_pixel_x_800 then
             glyph_bits(6 downto 0) <= glyph_bits(7 downto 1);
             glyph_bits(7) <= glyph_bits(0);
           end if;
-          if pixel_x_640 /= last_pixel_x_640 
-            and pixel_x_640 /= last_pixel_x_640 then
+          if pixel_x_800 /= last_pixel_x_800 
+            and pixel_x_800 /= last_pixel_x_800 then
             glyph_bit_count <= glyph_bit_count - 1;
           end if;
         end if;
@@ -734,11 +746,12 @@ begin  -- rtl
       end if;
 
       -- Now that we know what we want to display, actually display it.
-      if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+      if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
         report
-          "x=" & integer'image(pixel_x_640) & ": " &
+          "x=" & integer'image(pixel_x_800) & ": " &
           "source = " & feed_t'image(feed);
       end if;
+      
       case feed is
         when Normal =>
           -- Normal display, so show pixels from input video stream
@@ -751,13 +764,19 @@ begin  -- rtl
 --          vgared_out <= vgared_matrix;
 --          vgagreen_out <= vgagreen_matrix;
 --          vgablue_out <= vgablue_matrix;
-          if pixel_x_640 >= debug_x and pixel_x_640 < (debug_x+10) then
+          if pixel_x_800 >= debug_x and pixel_x_800 < (debug_x+10) then
             report
-              "x=" & integer'image(pixel_x_640) & ": " &
+              "x=" & integer'image(pixel_x_800) & ": " &
               "  pixel_out = " & std_logic'image(char_bits(7))
               & ", char_bits=%" & to_string(char_bits);
           end if;
-          if row_counter >= te_header_line_count then
+          if last_letterbox='0' then
+            -- outside of 800x480 LCD visible letterbox: Should be rain or black,
+            -- not any of the underlying display
+            vgared_out <= x"00";
+            vgagreen_out <= x"00";
+            vgablue_out <= x"00";
+          elsif row_counter >= te_header_line_count then
             -- In normal text area
             if char_bits(0) = '1' then
               if is_cursor='1' and te_blink_state='1' then
@@ -865,7 +884,7 @@ begin  -- rtl
         lfsr_advance(1 downto 0) <= "11";        
         lfsr_advance(3 downto 0) <= "1111";        
       end if;
-      if last_vsync = '1' and vsync_in = '0' then
+      if last_letterbox = '0' and lcd_in_letterbox = '1' then
         -- Vertical flyback = start of next frame
         report "Resetting at end of flyback";
 
