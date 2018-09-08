@@ -1358,10 +1358,7 @@ begin
             when ShowMemory6 => print_hex_addr(target_address,ShowMemory7);
             when ShowMemory7 =>
               if byte_number = 16 then
-                -- Display only 24 lines, so that it fits on one screen of the matrix mode
-                -- terminal emulator
-                if line_number = 24 then
-                  target_address <= target_address + 16;                    
+                if line_number = 31 then
                   state<=NextCommand;
                 else
                   if tx_ready='1' then
@@ -1372,13 +1369,7 @@ begin
                   end if;
                 end if;
               else
-                -- Display space between every second byte pair only, so that it fits in
-                -- the 50 column matrix mode terminal display.
-                if to_integer(to_unsigned(byte_number,1)) = 1 then
-                  try_output_char(' ',ShowMemory8);
-                else
-                  state <= ShowMemory8;
-                end if;
+                try_output_char(' ',ShowMemory8);
               end if;
             when ShowMemory8 =>
               byte_number <= byte_number + 1;
