@@ -185,9 +185,9 @@ architecture Behavioral of container is
   signal cpu_exrom : std_logic := '1';
 
   signal pixelclock : std_logic;
-  signal ethclock : std_logic;
+  signal ethclock : std_logic := '0';
   signal cpuclock : std_logic;
-  signal clock30 : std_logic;
+  -- signal clock30 : std_logic;
   signal clock40 : std_logic;
   signal clock120 : std_logic;
   signal clock100 : std_logic := '0';
@@ -267,7 +267,7 @@ begin
                clock80 => pixelclock, -- 80MHz
                clock40 => cpuclock, -- 40MHz
                clock50 => ethclock,
-               clock30 => clock30,
+               -- clock30 => clock30,
                clock100 => clock100,
                clock120 => clock120,
                clock240 => clock240
@@ -346,7 +346,7 @@ begin
       clock240 => clock240,
       clock120 => clock120,
       clock40 => clock40,
-      clock30 => clock30,
+      -- clock30 => clock30,
       clock50mhz      => ethclock,
 
       btncpureset => btncpureset,
