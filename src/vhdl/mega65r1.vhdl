@@ -186,6 +186,7 @@ architecture Behavioral of container is
 
   signal pixelclock : std_logic;
   signal ethclock : std_logic := '0';
+  signal clock30 : std_logic;
   signal cpuclock : std_logic;
   -- signal clock30 : std_logic;
   signal clock40 : std_logic;
@@ -335,17 +336,16 @@ begin
       );
   
   machine0: entity work.machine
-    generic map (
-      cpufrequency => 40)
+    generic map (cpufrequency => 40)
     port map (
       pixelclock      => pixelclock,
       cpuclock        => cpuclock,
       uartclock       => cpuclock, -- Match CPU clock
       ioclock         => cpuclock, -- Match CPU clock
-      clock100 => clock100,
       clock240 => clock240,
       clock120 => clock120,
-      clock40 => clock40,
+      clock40 => cpuclock,
+      clock200 => clock200,
       -- clock30 => clock30,
       clock50mhz      => ethclock,
 
