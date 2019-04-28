@@ -980,7 +980,7 @@ architecture Behavioral of viciv is
   signal d031_written_internal : std_logic := '0';
 
   signal badline_toggle_internal : std_logic := '0';
-  signal enable_raster_delay : std_logic := '1';
+  signal enable_raster_delay : std_logic := '0';
   signal pixels_since_last_char : unsigned(2 downto 0) := "000";
   
 begin
