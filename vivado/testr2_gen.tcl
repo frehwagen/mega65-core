@@ -7,7 +7,7 @@ if { [info exists ::origin_dir_loc] } {
 }
 
 # Set the project name
-set project_name "mega65r2"
+set project_name "testr2"
 
 # Use project name variable, if specified in the tcl shell
 if { [info exists ::user_project_name] } {
@@ -15,7 +15,7 @@ if { [info exists ::user_project_name] } {
 }
 
 variable script_file
-set script_file "mega65r2.tcl"
+set script_file "testr2.tcl"
 
 # Help information for this script
 proc help {} {
@@ -132,7 +132,6 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/touch.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/i2c_master.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/i2c_wrapper.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/mega65r2_i2c.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_bits_to_bytes.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_decoder.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/mfm_gaps_to_bits.vhdl"]"\
@@ -162,8 +161,6 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/viciv.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/iomapper.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/gs4510.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/hyperram.vhdl"]"\
- "[file normalize "$origin_dir/src/verilog/hyper_xface.v"]"\
  "[file normalize "$origin_dir/src/vhdl/vfpga/overlay_IP.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/vfpga/vfpga_clock_controller_pausable.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/vfpga/vfpga_wrapper_8bit.vhdl"]"\
@@ -181,11 +178,12 @@ set files [list \
  "[file normalize "$origin_dir/src/vhdl/ps2_to_uart.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/uart_charrom.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ddrwrapper.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/mega65r2.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/testr2.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/pin_id.vhdl"]"\
+ "[file normalize "$origin_dir/src/vhdl/mega65kbd_to_matrix.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/keyboard_complex.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/virtual_to_matrix.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/keyboard_to_matrix.vhdl"]"\
- "[file normalize "$origin_dir/src/vhdl/mega65kbd_to_matrix.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/matrix_to_ascii.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/widget_to_matrix.vhdl"]"\
  "[file normalize "$origin_dir/src/vhdl/ps2_to_matrix.vhdl"]"\
@@ -328,10 +326,6 @@ set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
 set file "vhdl/keyboard_to_matrix.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-set file "vhdl/mega65kbd_to_matrix.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
@@ -503,14 +497,6 @@ set file "vhdl/gs4510.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/hyperram.vhdl"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-set file "verilog/hyper_xface.v"
-set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
-set_property -name "file_type" -value "Verilog" -objects $file_obj
-
 set file "vhdl/divider32.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
@@ -543,7 +529,7 @@ set file "ipcore_dir/dotclock100.vhd"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
-set file "vhdl/mega65r2.vhdl"
+set file "vhdl/testr2.vhdl"
 set file_obj [get_files -of_objects [get_filesets sources_1] [list "*$file"]]
 set_property -name "file_type" -value "VHDL" -objects $file_obj
 
@@ -652,9 +638,9 @@ if {[string equal [get_filesets -quiet constrs_1] ""]} {
 set obj [get_filesets constrs_1]
 
 # Add/Import constrs file and set constrs file properties
-set file "[file normalize "$origin_dir/src/vhdl/mega65r2.xdc"]"
+set file "[file normalize "$origin_dir/src/vhdl/testr2.xdc"]"
 set file_imported [add_files -fileset constrs_1 $file]
-set file "vhdl/mega65r2.xdc"
+set file "vhdl/testr2.xdc"
 set file_obj [get_files -of_objects [get_filesets constrs_1] [list "*$file"]]
 set_property -name "file_type" -value "XDC" -objects $file_obj
 

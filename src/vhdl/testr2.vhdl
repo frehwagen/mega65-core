@@ -39,15 +39,19 @@ entity container is
 --         nmi : in  STD_LOGIC;
          
          ----------------------------------------------------------------------
-         -- keyboard/joystick 
+         -- CIA1 ports for keyboard/joystick 
          ----------------------------------------------------------------------
+         -- XXX Replace with new 8-pin keyboard interface
+--         restore_key : in std_logic;
+--         column : inout  std_logic_vector(8 downto 0) := (others => 'Z');
+--         row : in  std_logic_vector(8 downto 0);
+--         keyleft : inout std_logic := 'Z';
+--         keyup : inout std_logic := 'Z';
 
-         -- Interface for physical keyboard
          kb_io0 : out std_logic;
          kb_io1 : out std_logic;
          kb_io2 : in std_logic;
-
-         -- Direct joystick lines
+         
          fa_left : in std_logic;
          fa_right : in std_logic;
          fa_up : in std_logic;
@@ -87,28 +91,19 @@ entity container is
 
          cart_d : inout unsigned(7 downto 0) := (others => 'Z');
          cart_a : inout unsigned(15 downto 0) := (others => 'Z');
-
-         ----------------------------------------------------------------------
-         -- HyperRAM as expansion RAM
-         ----------------------------------------------------------------------
-         hr_d : inout unsigned(7 downto 0);
-         hr_rwds : inout std_logic;
-         hr_reset : out std_logic;
-         hr_clk_p : out std_logic;
-         hr_cs0 : out std_logic;
          
          ----------------------------------------------------------------------
          -- CBM floppy serial port
          ----------------------------------------------------------------------
-         iec_clk_en : out std_logic;
-         iec_data_en : out std_logic;
+         iec_clk_en : out std_logic := '0';
+         iec_data_en : out std_logic := '0';
          iec_data_o : out std_logic;
          iec_reset : out std_logic;
          iec_clk_o : out std_logic;
          iec_data_i : in std_logic;
          iec_clk_i : in std_logic;
          iec_srq_o : out std_logic;
-         iec_srq_en : out std_logic;
+         iec_srq_en : out std_logic := '0';
          iec_src_i : in std_logic;
          iec_atn : out std_logic;
          
@@ -152,15 +147,18 @@ entity container is
          eth_clock : out std_logic;
          
          -------------------------------------------------------------------------
-         -- Lines for the SDcard interface itself
+         -- Lines for the SDcard interfaces
          -------------------------------------------------------------------------
-         sdReset : out std_logic := '0';  -- must be 0 to power SD controller (cs_bo)
-         sdClock : out std_logic;       -- (sclk_o)
+         sdReset : out std_logic;
+         sdClock : out std_logic;
          sdMOSI : out std_logic;      
          sdMISO : in  std_logic;
 
+         sd2Reset : out std_logic;
+         sd2Clock : out std_logic;
          sd2MOSI : out std_logic;
-         sd2MISO : in std_logic;
+         sd2MISO : out std_logic;
+         sd2_dat : out std_logic_vector(3 downto 3);
 
          -- Left and right audio
          pwm_l : out std_logic;
@@ -184,30 +182,20 @@ entity container is
          f_diskchanged : in std_logic;
 
          led : out std_logic;
-
-         ----------------------------------------------------------------------
-         -- I2C on-board peripherals
-         ----------------------------------------------------------------------
-         fpga_sda : inout std_logic;
-         fpga_scl : inout std_logic;         
          
          ----------------------------------------------------------------------
-         -- Serial monitor interface
+         -- Debug interfaces on Nexys4 board
          ----------------------------------------------------------------------
          UART_TXD : out std_logic;
-         RsRx : in std_logic
+         RsRx : out std_logic
          
          );
 end container;
 
 architecture Behavioral of container is
-
+  
   signal irq : std_logic := '1';
   signal nmi : std_logic := '1';
-  signal irq_combined : std_logic := '1';
-  signal nmi_combined : std_logic := '1';
-  signal irq_out : std_logic := '1';
-  signal nmi_out : std_logic := '1';
   signal reset_out : std_logic := '1';
   signal cpu_game : std_logic := '1';
   signal cpu_exrom : std_logic := '1';
@@ -215,7 +203,6 @@ architecture Behavioral of container is
   signal pixelclock : std_logic;
   signal ethclock : std_logic;
   signal cpuclock : std_logic;
-  signal clock40 : std_logic;
   signal clock120 : std_logic;
   signal clock100 : std_logic := '0';
   signal clock200 : std_logic;
@@ -223,14 +210,10 @@ architecture Behavioral of container is
 
   -- XXX Actually connect to new keyboard
   signal restore_key : std_logic := '1';
-  -- XXX Note that left and up are active HIGH!
-  -- XXX Plumb these into the MEGA65R2 keyboard protocol receiver
-  signal keyleft : std_logic := '0';
-  signal keyup : std_logic := '0';
-  -- On the R2, we don't use the "real" keyboard interface, but instead the
-  -- widget board interface, so just have these as dummy all-high place holders
   signal column : std_logic_vector(8 downto 0) := (others => '1');
   signal row : std_logic_vector(8 downto 0) := (others => '1');
+  signal keyleft : std_logic := '1';
+  signal keyup : std_logic := '1';
   
   
   signal segled_counter : unsigned(31 downto 0) := (others => '0');
@@ -248,9 +231,11 @@ architecture Behavioral of container is
   signal v_hsync : std_logic;
   signal v_vsync : std_logic;
   signal v_red : unsigned(7 downto 0);
-  signal v_green : unsigned(7 downto 0);
+  signal v_green : unsigned(7 downto 0) := x"00";
   signal v_blue : unsigned(7 downto 0);
   signal v_de : std_logic;
+
+  signal phi2_out : std_logic;
   
   -- XXX We should read the real temperature and feed this to the DDR controller
   -- so that it can update timing whenever the temperature changes too much.
@@ -282,41 +267,45 @@ architecture Behavioral of container is
   
   signal iec_clk_en_drive : std_logic;
   signal iec_data_en_drive : std_logic;
-  signal iec_srq_en_drive : std_logic;
   signal iec_data_o_drive : std_logic;
   signal iec_reset_drive : std_logic;
   signal iec_clk_o_drive : std_logic;
-  signal iec_srq_o_drive : std_logic;
   signal iec_data_i_drive : std_logic;
   signal iec_clk_i_drive : std_logic;
-  signal iec_srq_i_drive : std_logic;
   signal iec_atn_drive : std_logic;
 
   signal pwm_l_drive : std_logic;
   signal pwm_r_drive : std_logic;
 
-  signal flopled_drive : std_logic;
-  signal flopmotor_drive : std_logic;
+  signal powerled : std_logic := '1';
+  signal flopled_drive : std_logic := '1';
+  signal flopmotor_drive : std_logic := '0';
 
   signal joy3 : std_logic_vector(4 downto 0);
   signal joy4 : std_logic_vector(4 downto 0);
 
   signal cart_access_count : unsigned(7 downto 0);
 
-  signal widget_matrix_col_idx : integer range 0 to 8 := 0;
-  signal widget_matrix_col : std_logic_vector(7 downto 0);
-  signal widget_restore : std_logic := '1';
-  signal widget_capslock : std_logic := '0';
-  signal widget_joya : std_logic_vector(4 downto 0);
-  signal widget_joyb : std_logic_vector(4 downto 0);
+  signal counter : integer := 0;
+  signal ktoggle : std_logic := '0';
 
-  signal expansionram_read : std_logic;
-  signal expansionram_write : std_logic;
-  signal expansionram_rdata : unsigned(7 downto 0);
-  signal expansionram_wdata : unsigned(7 downto 0);
-  signal expansionram_address : unsigned(26 downto 0);
-  signal expansionram_data_ready_strobe : std_logic;
-  signal expansionram_busy : std_logic;
+  signal restore : std_logic := '0';
+  signal capslock : std_logic := '0';
+  signal leftkey : std_logic := '0';
+  signal upkey : std_logic := '0';
+
+  signal delete_out : std_logic := '0';
+  signal return_out : std_logic := '0';
+  
+  signal matrix_col : std_logic_vector(7 downto 0);
+
+  signal x_zero : std_logic;
+  signal y_zero : std_logic;
+
+  signal x_pos : unsigned(11 downto 0) := to_unsigned(0,12);
+  signal y_pos : unsigned(11 downto 0) := to_unsigned(0,12);
+  
+--  signal dummy : std_logic := '0';
   
 begin
 
@@ -330,56 +319,84 @@ begin
                clock240 => clock240
                );
 
-  fpgatemp0: entity work.fpgatemp
-    generic map (DELAY_CYCLES => 480)
-    port map (
-      rst => '0',
-      clk => cpuclock,
-      temp => fpga_temperature);
+  frame50: entity work.frame_generator
+    generic map ( frame_width => 968*4-1,    -- 63 cycles x 16 pixels per clock
+                  clock_divider => 4,
+                  display_width => 800*4,
+                  frame_height => 624,        -- 312 lines x 2 fields
+                  pipeline_delay => 128,
+                  display_height => 600,
+                  vsync_start => 624-18-5,
+                  vsync_end => 624-18,
+                  hsync_start => (968-46-1)*4,
+                  hsync_end => (968-1)*4
+                  )                  
+--    generic map ( frame_width => 1265*3-1,   -- 65 cycles x 16 pixels = 1040,
+--                                             -- but with 526 lines, we need it
+--                                             -- wider.
+--                  display_width => 800 *3,
+--                  clock_divider => 3,
+--                  frame_height => 526,       -- NTSC frame is 263 lines x 2 frames
+--                  display_height => 526-4,
+--                  pipeline_delay => 96,
+--                  vsync_start => 526-4,
+--                  vsync_end => 526,
+--                  hsync_start => 1204*3,
+--                  hsync_end => 1264*3
+--                  )                  
+    port map ( clock240 => clock240,
+               clock120 => clock120,
+               clock80 => pixelclock,
+               clock40 => cpuclock,
+               hsync => v_hsync,
+               vsync => v_vsync,
+               hsync_polarity => '1',
+               vsync_polarity => '1',
 
+               phi2_out => phi2_out,
+               
+               x_zero_80 => x_zero,
+               y_zero_80 => y_zero
+--               inframe => inframe_pal50,
+--               x_zero => x_zero50,
+
+     -- Get test pattern
+--               red_o => v_red,
+--               green_o => v_green,
+--               blue_o => v_blue
+               );
+
+  
   kbd0: entity work.mega65kbd_to_matrix
     port map (
       ioclock => cpuclock,
 
-      powerled => '1',
-      flopled => flopled_drive,
-      flopmotor => flopmotor_drive,
-            
+--      powerled => powerled,
+--      flopled => flopled_drive,
+--      flopmotor => flopmotor_drive,
+
+      powerled => matrix_col(0),
+      flopled => matrix_col(1),
+
+--      powerled => delete_out,
+--      flopled => return_out,
+      flopmotor => matrix_col(2),
+
       kio8 => kb_io0,
       kio9 => kb_io1,
       kio10 => kb_io2,
 
-      matrix_col => widget_matrix_col,
-      matrix_col_idx => widget_matrix_col_idx,
-      restore => widget_restore,
-      capslock_out => widget_capslock,
-      upkey => keyup,
-      leftkey => keyleft
-      
+      matrix_col_idx => 0,
+      matrix_col => matrix_col,
+      restore => restore,
+      capslock_out => capslock,
+      leftkey => leftkey,
+      upkey => upkey,
+      delete_out => delete_out,
+      return_out => return_out
+
       );
 
-  hyperram0: entity work.hyperram
-    port map (
-      cpuclock => cpuclock,
-      clock240 => clock240,
-      reset => reset_out,
-      address => expansionram_address,
-      wdata => expansionram_wdata,
-      read_request => expansionram_read,
-      write_request => expansionram_write,
-      rdata => expansionram_rdata,
-      data_ready_strobe => expansionram_data_ready_strobe,
-      busy => expansionram_busy,
-      latency_1x => to_unsigned(4,8),
-      latency_2x => to_unsigned(8,8),
-      
-      hr_d => hr_d,
-      hr_rwds => hr_rwds,
-      hr_reset => hr_reset,
-      hr_clk_p => hr_clk_p,
-      hr_cs0 => hr_cs0
-      );
-  
   slow_devices0: entity work.slow_devices
     generic map (
       target => mega65r2
@@ -391,9 +408,6 @@ begin
       cpu_exrom => cpu_exrom,
       cpu_game => cpu_game,
       sector_buffer_mapped => sector_buffer_mapped,
-
-      irq_out => irq_out,
-      nmi_out => nmi_out,
       
       qspidb => qspidb,
       qspicsn => qspicsn,      
@@ -412,16 +426,7 @@ begin
       slow_access_wdata => slow_access_wdata,
       slow_access_rdata => slow_access_rdata,
 
-      ----------------------------------------------------------------------
-      -- Expansion RAM interface (upto 127MB)
-      ----------------------------------------------------------------------
-      expansionram_read => expansionram_read,
-      expansionram_write => expansionram_write,
-      expansionram_rdata => expansionram_rdata,
-      expansionram_wdata => expansionram_wdata,
-      expansionram_address => expansionram_address,
-      expansionram_data_ready_strobe => expansionram_data_ready_strobe,
-      expansionram_busy => expansionram_busy,
+      expansionram_data_ready_strobe => '1',
       
       ----------------------------------------------------------------------
       -- Expansion/cartridge port
@@ -441,6 +446,7 @@ begin
       cart_dma => cart_dma,
       
       cart_exrom => cart_exrom,
+--      cart_exrom => dummy,
       cart_ba => cart_ba,
       cart_rw => cart_rw,
       cart_roml => cart_roml,
@@ -454,179 +460,6 @@ begin
       cart_a => cart_a
       );
   
-  machine0: entity work.machine
-    generic map (cpufrequency => 40,
-                 target => mega65r2
-                 )                 
-    port map (
-      pixelclock      => pixelclock,
-      cpuclock        => cpuclock,
-      uartclock       => cpuclock, -- Match CPU clock
-      ioclock         => cpuclock, -- Match CPU clock
-      clock240 => clock240,
-      clock120 => clock120,
-      clock40 => cpuclock,
-      clock200 => clock200,
-      clock50mhz      => ethclock,
-
-      btncpureset => btncpureset,
-      reset_out => reset_out,
-      irq => irq_combined,
-      nmi => nmi_combined,
-      restore_key => restore_key,
-      sector_buffer_mapped => sector_buffer_mapped,
-
-      joy3 => joy3,
-      joy4 => joy4,
-      
-      no_hyppo => '0',
-      
-      vsync           => v_vsync,
-      hsync           => v_hsync,
-      vgared          => v_red,
-      vgagreen        => v_green,
-      vgablue         => v_blue,
-      hdmi_sda        => hdmi_sda,
-      hdmi_scl        => hdmi_scl,      
-      
-      ----------------------------------------------------------------------
-      -- CBM floppy  std_logic_vectorerial port
-      ----------------------------------------------------------------------
-      iec_clk_en => iec_clk_en_drive,
-      iec_data_en => iec_data_en_drive,
-      iec_data_o => iec_data_o_drive,
-      iec_reset => iec_reset_drive,
-      iec_clk_o => iec_clk_o_drive,
-      iec_data_external => iec_data_i_drive,
-      iec_clk_external => iec_clk_i_drive,
-      iec_atn_o => iec_atn_drive,
-
---      buffereduart_rx => '1',
-      buffereduart_ringindicate => '1',
-
-      porta_pins => column(7 downto 0),
-      portb_pins => row(7 downto 0),
-      keyboard_column8 => column(8),
-      caps_lock_key => row(8),
-      keyleft => keyleft,
-      keyup => keyup,
-
-      fa_fire => fa_fire_drive,
-      fa_up => fa_up_drive,
-      fa_left => fa_left_drive,
-      fa_down => fa_down_drive,
-      fa_right => fa_right_drive,
-
-      fb_fire => fb_fire_drive,
-      fb_up => fb_up_drive,
-      fb_left => fb_left_drive,
-      fb_down => fb_down_drive,
-      fb_right => fb_right_drive,
-
-      fa_potx => fa_potx,
-      fa_poty => fa_poty,
-      fb_potx => fb_potx,
-      fb_poty => fb_poty,
-      pot_drain => pot_drain,
-      pot_via_iec => pot_via_iec,
-
-    f_density => f_density,
-    f_motor => f_motor,
-    f_select => f_select,
-    f_stepdir => f_stepdir,
-    f_step => f_step,
-    f_wdata => f_wdata,
-    f_wgate => f_wgate,
-    f_side1 => f_side1,
-    f_index => f_index,
-    f_track0 => f_track0,
-    f_writeprotect => f_writeprotect,
-    f_rdata => f_rdata,
-    f_diskchanged => f_diskchanged,
-      
-      ---------------------------------------------------------------------------
-      -- IO lines to the ethernet controller
-      ---------------------------------------------------------------------------
-      eth_mdio => eth_mdio,
-      eth_mdc => eth_mdc,
-      eth_reset => eth_reset,
-      eth_rxd => eth_rxd,
-      eth_txd => eth_txd,
-      eth_txen => eth_txen,
-      eth_rxer => eth_rxer,
-      eth_rxdv => eth_rxdv,
-      eth_interrupt => '0',
-      
-      -------------------------------------------------------------------------
-      -- Lines for the SDcard interface itself
-      -------------------------------------------------------------------------
-      cs_bo => sdReset,
-      sclk_o => sdClock,
-      mosi_o => sdMOSI,
-      miso_i => sdMISO,
-      mosi2_o => sd2MOSI,
-      miso2_i => sd2MISO,
-
-      slow_access_request_toggle => slow_access_request_toggle,
-      slow_access_ready_toggle => slow_access_ready_toggle,
-      slow_access_address => slow_access_address,
-      slow_access_write => slow_access_write,
-      slow_access_wdata => slow_access_wdata,
-      slow_access_rdata => slow_access_rdata,
-      cpu_exrom => cpu_exrom,      
-      cpu_game => cpu_game,
-      cart_access_count => cart_access_count,
-
---      aclMISO => aclMISO,
-      aclMISO => '1',
---      aclMOSI => aclMOSI,
---      aclSS => aclSS,
---      aclSCK => aclSCK,
---      aclInt1 => aclInt1,
---      aclInt2 => aclInt2,
-      aclInt1 => '1',
-      aclInt2 => '1',
-    
-      micData0 => '1',
-      micData1 => '1',
---      micClk => micClk,
---      micLRSel => micLRSel,
-
-      flopled => flopled_drive,
-      flopmotor => flopmotor_drive,
-      ampPWM_l => pwm_l_drive,
-      ampPWM_r => pwm_r_drive,
-
-      tmpsda => fpga_sda,
-      tmpscl => fpga_scl,
-      
-      -- No PS/2 keyboard for now
-      ps2data =>      '1',
-      ps2clock =>     '1',
-
-      fpga_temperature => fpga_temperature,
-      
-      UART_TXD => UART_TXD,
-      RsRx => RsRx,
-
-      -- Ignore widget board interface and other things
-      tmpint => '1',
-      tmpct => '1',
-
-      -- Connect MEGA65 smart keyboard via JTAG-like remote GPIO interface
-      widget_matrix_col_idx => widget_matrix_col_idx,
-      widget_matrix_col => widget_matrix_col,
-      widget_restore => widget_restore,
-      widget_capslock => widget_capslock,
-      widget_joya => (others => '1'),
-      widget_joyb => (others => '1'),      
-      
-      sw => (others => '0'),
---      uart_rx => '1',
-      btn => (others => '1')
-         
-      );
-
   process (pixelclock) is
   begin
     vdac_sync_n <= '0';  -- no sync on green
@@ -638,15 +471,61 @@ begin
     -- Ethernet clock at 50MHz
     eth_clock <= ethclock;
 
-    -- Use both real and cartridge IRQ and NMI signals
-    irq_combined <= irq and irq_out;
-    nmi_combined <= nmi and nmi_out;
+    if rising_edge(pixelclock) then
+      hsync <= v_hsync;
+      vsync <= v_vsync;
+      vgared <= v_red;
+      vgagreen <= v_green;
+      vgablue <= v_blue;
+
+      if x_zero = '1' then
+        x_pos <= to_unsigned(0,12);
+        y_pos <= y_pos + 1;
+      else
+        x_pos <= x_pos + 1;
+      end if;
+      if y_zero = '1' then
+        y_pos <= to_unsigned(0,12);
+        x_pos <= to_unsigned(0,12);
+      end if;
+
+
+      if x_pos(6)='1' then
+        v_red <= x"FF";
+      else
+        v_red <= x"00";
+      end if;
+      if y_pos(5)='1' then
+        v_blue <= x"FF";
+      else
+        v_blue <= x"00";
+      end if;
+      
+    end if;
+
+    if rising_edge(cpuclock) then
+      if phi2_out = '1' then
+        v_green <= not v_green;
+      end if;
+    end if;
     
     -- Drive most ports, to relax timing
     if rising_edge(cpuclock) then
 
-      led <= cart_exrom;
+      led <= cpu_exrom;
       
+      -- Try to debug keyboard interface
+      if counter /= 10000000 then
+        counter <= counter + 1;
+      else
+        counter <= 0;
+        ktoggle <= not ktoggle;
+--        flop <= ktoggle;
+      end if;
+      
+      -- Connect UART RX and TX
+--      uart_txd <= rsrx;
+
       fa_left_drive <= fa_left;
       fa_right_drive <= fa_right;
       fa_up_drive <= fa_up;
@@ -658,80 +537,8 @@ begin
       fb_down_drive <= fb_down;
       fb_fire_drive <= fb_fire;  
 
-      -- The CIAs drive these lines naively, so we need to apply the inverters
-      -- on the outputs here, and also deal with the particulars of how the
-      -- MEGA65 PCB drives these lines.
-      -- Note that the MEGA65 PCB lacks pull-ups on these lines, and relies on
-      -- the connected disk drive(s) having pull-ups of their own.
-      -- Here is the truth table for behaviour with a pull-up on the pin:
-      -- +----+-----++----+
-      -- | _o | _en || _i |
-      -- +----+-----++----+
-      -- |  0 |   X || 0  |
-      -- |  1 |   0 || 1* |
-      -- |  1 |   1 || 1  |
-      -- +----+-----++----+
-      -- * Value provided by pin up, or equivalently device on the bus
-      --
-      -- End result is simple: Invert output bit, and copy output enable
-      -- Except, that the CIA always thinks it is driving the line, so
-      -- we need to ignore the _en lines, and instead use the _o lines
-      -- (before inversion) to indicate when we should be driving the pin
-      -- to ground.
-
-      iec_reset <= iec_reset_drive;
-      iec_atn <= not iec_atn_drive;
-
-      if pot_via_iec = '0' then
-        -- Normal IEC port operation
-        iec_clk_en <= iec_clk_o_drive;
-        iec_clk_o <= not iec_clk_o_drive;
-        iec_clk_i_drive <= iec_clk_i;
-        iec_data_en <= iec_data_o_drive;
-        iec_data_o <= not iec_data_o_drive;
-        iec_data_i_drive <= iec_data_i;
-        -- So pots act like infinite resistance
-        fa_potx <= '0';
-        fa_poty <= '0';
-        fb_potx <= '0';
-        fb_poty <= '0';
-      else
-        -- IEC lines being used as POT inputs
-        iec_clk_i_drive <= '1';
-        iec_data_i_drive <= '1';
-        if pot_drain = '1' then
-          -- IEC lines being used to drain pots
-          iec_clk_en <= '1';
-          iec_clk_o <= '0';
-          iec_data_en <= '1';
-          iec_data_o <= '0';
-        else
-          -- Stop draining
-          iec_clk_en <= '0';
-          iec_clk_o <= '0';
-          iec_data_en <= '0';
-          iec_data_o <= '0';
-        end if;
-        -- Copy IEC input values to POT inputs
-        fa_potx <= iec_data_i;
-        fa_poty <= iec_clk_i;
-        fb_potx <= iec_data_i;
-        fb_poty <= iec_clk_i;
-      end if;
-
-      pwm_l <= pwm_l_drive;
-      pwm_r <= pwm_r_drive;
-
     end if;
-    
-    if rising_edge(pixelclock) then
-      hsync <= v_hsync;
-      vsync <= v_vsync;
-      vgared <= v_red;
-      vgagreen <= v_green;
-      vgablue <= v_blue;
-    end if;
-    
+
     if rising_edge(pixelclock) then
 
       hdmi_hsync <= v_hsync;
@@ -743,9 +550,9 @@ begin
       hdmi_de <= not (v_hsync or v_vsync);
       -- no hdmi audio yet
       hdmi_spdif_out <= 'Z';
-      -- HDMI control interface
-      -- XXX We need to send some commands via I2C to configure the HDMI
-      -- interface, which we don't yet do, so HDMI output will not yet work.
+    -- HDMI control interface
+    -- XXX We need to send some commands via I2C to configure the HDMI
+    -- interface, which we don't yet do, so HDMI output will not yet work.
 --      hdmi_scl <= hdmi_scl;
 --      hdmi_sda <= hdmi_sda;
     end if;

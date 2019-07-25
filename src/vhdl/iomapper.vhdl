@@ -4,8 +4,11 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.numeric_std.all;
 use work.debugtools.all;
+use work.cputypes.all;
 
 entity iomapper is
+  generic ( target : mega65_target_t
+             );
   port (Clk : in std_logic;
         clock200mhz : in std_logic;
         protected_hardware_in : in unsigned(7 downto 0);
@@ -86,7 +89,6 @@ entity iomapper is
 
         drive_led : out std_logic := '0';
         motor : out std_logic := '0';
-        drive_led_out : in std_logic;
 
         porta_pins : inout  std_logic_vector(7 downto 0) := (others => 'Z');
         portb_pins : in  std_logic_vector(7 downto 0);
@@ -174,10 +176,15 @@ entity iomapper is
         ps2data : in std_logic;
         ps2clock : in std_logic;
         scancode_out : out std_logic_vector(12 downto 0); 												  
-        pmod_clock : in std_logic;
-        pmod_start_of_sequence : in std_logic;
-        pmod_data_in : in std_logic_vector(3 downto 0);
-        pmod_data_out : out std_logic_vector(1 downto 0);
+        -- Widget board / MEGA65R2 keyboard
+        widget_matrix_col_idx : out integer range 0 to 8 := 0;
+        widget_matrix_col : in std_logic_vector(7 downto 0);
+        widget_restore : in std_logic;
+        widget_capslock : in std_logic;
+        widget_joya : in std_logic_vector(4 downto 0);
+        widget_joyb : in std_logic_vector(4 downto 0);
+
+
         pmoda : inout std_logic_vector(7 downto 0);
 
         hdmi_scl : inout std_logic := '1';
@@ -479,6 +486,7 @@ architecture behavioral of iomapper is
 
   signal touch_key1_driver : unsigned(7 downto 0);
   signal touch_key2_driver : unsigned(7 downto 0);
+  signal touch1_valid_int : std_logic := '0';
 
   signal userport_in : std_logic_vector(7 downto 0) := x"FF";
   signal userport_out : std_logic_vector(7 downto 0) := x"FF";
@@ -840,11 +848,15 @@ begin
     capslock_out => capslock_from_keymapper,
     keyboard_column8_out => keyboard_column8_out,
     keyboard_column8_select_in => keyboard_column8_select,
-    pmod_clock => pmod_clock,
-    pmod_start_of_sequence => pmod_start_of_sequence,
-    pmod_data_in => pmod_data_in,
-    pmod_data_out => pmod_data_out,
-    
+
+    widget_matrix_col_idx => widget_matrix_col_idx,
+    widget_matrix_col => widget_matrix_col,
+    widget_restore => widget_restore,
+    widget_capslock => widget_capslock,
+    widget_joya => widget_joya,
+    widget_joyb => widget_joyb,
+      
+      
     -- remote keyboard input via ethernet
 --    eth_keycode_toggle => eth_keycode_toggle,
 --    eth_keycode => eth_keycode
@@ -1023,38 +1035,59 @@ begin
 
     );
 
-  i2cperiph: entity work.i2c_wrapper port map (
-    clock => clk,
-    cs => i2cperipherals_cs,
+  i2cperiph_megaphone:
+  if target = megaphoner1 generate
+    i2c1: entity work.i2c_wrapper port map (
+      clock => clk,
+      cs => i2cperipherals_cs,
 
-    sda => i2c1SDA,
-    scl => i2c1SCL,
+      sda => i2c1SDA,
+      scl => i2c1SCL,
 
-    i2c_joya_fire => i2c_joya_fire,
-    i2c_joya_up => i2c_joya_up,
-    i2c_joya_down => i2c_joya_down,
-    i2c_joya_left => i2c_joya_left,
-    i2c_joya_right => i2c_joya_right,
-    i2c_joyb_fire => i2c_joyb_fire,
-    i2c_joyb_up => i2c_joyb_up,
-    i2c_joyb_down => i2c_joyb_down,
-    i2c_joyb_left => i2c_joyb_left,
-    i2c_joyb_right => i2c_joyb_right,
-    i2c_button2 => i2c_button2,
-    i2c_button3 => i2c_button3,
-    i2c_button4 => i2c_button4,
-    i2c_black2 => i2c_black2,
-    i2c_black3 => i2c_black3,
-    i2c_black4 => i2c_black4,
+      i2c_joya_fire => i2c_joya_fire,
+      i2c_joya_up => i2c_joya_up,
+      i2c_joya_down => i2c_joya_down,
+      i2c_joya_left => i2c_joya_left,
+      i2c_joya_right => i2c_joya_right,
+      i2c_joyb_fire => i2c_joyb_fire,
+      i2c_joyb_up => i2c_joyb_up,
+      i2c_joyb_down => i2c_joyb_down,
+      i2c_joyb_left => i2c_joyb_left,
+      i2c_joyb_right => i2c_joyb_right,
+      i2c_button2 => i2c_button2,
+      i2c_button3 => i2c_button3,
+      i2c_button4 => i2c_button4,
+      i2c_black2 => i2c_black2,
+      i2c_black3 => i2c_black3,
+      i2c_black4 => i2c_black4,
     
-    fastio_addr => unsigned(address),
-    fastio_write => w,
-    fastio_read => r,
-    fastio_wdata => unsigned(data_i),
-    std_logic_vector(fastio_rdata) => data_o
+      fastio_addr => unsigned(address),
+      fastio_write => w,
+      fastio_read => r,
+      fastio_wdata => unsigned(data_i),
+      std_logic_vector(fastio_rdata) => data_o
 
     );
+  end generate i2cperiph_megaphone;
+  
+  i2cperiph_mega65r2:
+  if target = mega65r2 generate
+    i2c1: entity work.mega65r2_i2c port map (
+      clock => clk,
+      cs => i2cperipherals_cs,
+
+      sda => i2c1SDA,
+      scl => i2c1SCL,
     
+      fastio_addr => unsigned(address),
+      fastio_write => w,
+      fastio_read => r,
+      fastio_wdata => unsigned(data_i),
+      std_logic_vector(fastio_rdata) => data_o
+
+    );
+  end generate i2cperiph_mega65r2;
+  
   
   sdcard0 : entity work.sdcardio port map (
     pixelclk => pixelclk,
@@ -1143,7 +1176,7 @@ begin
     lcdpwm => lcdpwm,
     touchSDA => touchSDA,
     touchSCL => touchSCL,
-    touch1_valid => touch1_valid,
+    touch1_valid => touch1_valid_int,
     touch1_x => touch1_x,
     touch1_y => touch1_y,
     touch2_valid => touch2_valid,
@@ -1190,6 +1223,8 @@ begin
 
     if rising_edge(clk) then
 
+      touch1_valid <= touch1_valid_int;
+      
       -- Generate 1541 drive clock at exactly 1MHz, 2MHz, 3.5MHz or 40MHz,
       -- depending on CPU speed setting.
       -- This allows fastloading at fast CPU speeds, without (hopefully) messing
@@ -1253,7 +1288,12 @@ begin
           potl_x <= pota_x;
           potl_y <= pota_y;
           potr_x <= potb_x;
-          potr_y <= potb_y;
+          -- Simulate light gun with touch screen
+          if touch1_valid_int='0' then
+            potr_y <= potb_y;
+          else
+            potr_y <= x"00";
+          end if;
         when others =>
           potr_x <= pota_x;
           potr_y <= pota_y;
@@ -1421,11 +1461,18 @@ begin
         sectorbuffercs <= sbcs_en;
       end if;
 
-      -- @IO:GS $FFD7000-FF - I2C Peripherals
+      -- @IO:GS $FFD7000-FF - I2C Peripherals     
       i2cperipherals_cs <= '0';
-      if address(19 downto 8) = x"D70" then
-        i2cperipherals_cs <= '1';
-        report "i2cperipherals_cs asserted";
+      if target = megaphoner1 then
+        if address(19 downto 8) = x"D70" then
+          i2cperipherals_cs <= '1';
+          report "i2cperipherals_cs for MEGAphone asserted";
+        end if;
+      else
+        if address(19 downto 8) = x"D71" then
+          i2cperipherals_cs <= '1';
+          report "i2cperipherals_cs for MEGA65R2 asserted";
+        end if;
       end if;
       
       cs_driveram <= '0';

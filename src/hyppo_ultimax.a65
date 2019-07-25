@@ -1,4 +1,27 @@
 
+reset_cartridge:
+		ldz #$00
+		lda #<$0000
+		sta zptempv32+0
+		sta zptempv32+1
+		lda #<$0701
+		sta zptempv32+2
+		lda #>$0701
+		sta zptempv32+3
+		lda #$20
+		nop
+		sta (<zptempv32),z
+		ldy #$00
+charge_delay:
+		inz
+		bne charge_delay
+		iny
+		bne charge_delay
+		tza
+		nop
+		sta (<zptempv32),z
+		rts
+
 setup_for_ultimax_cartridge:
 
 		lda hypervisor_cartridge_flags

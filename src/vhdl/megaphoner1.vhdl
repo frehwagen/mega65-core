@@ -294,6 +294,8 @@ architecture Behavioral of container is
   signal i2c_black3 : std_logic;
   signal i2c_black4 : std_logic;
 
+  signal widget_matrix_col : std_logic_vector(7 downto 0) := (others => '1');
+  
 begin
 
   dotclock1: entity work.dotclock100
@@ -316,6 +318,9 @@ begin
 
   hyperram0: entity work.hyperram
     port map (
+      latency_1x => to_unsigned(4,8),
+      latency_2x => to_unsigned(8,8),
+      reset => reset_out,
       cpuclock => cpuclock,
       clock240 => clock240,
       address => expansionram_address,
@@ -328,10 +333,10 @@ begin
       hr_d => hr_d,
       hr_rwds => hr_rwds,
       hr_reset => hr_reset,
-      hr_clk_n => hr_clk_n,
+--      hr_clk_n => hr_clk_n,
       hr_clk_p => hr_clk_p,
-      hr_cs0 => hr_cs0,
-      hr_cs1 => hr_cs1
+      hr_cs0 => hr_cs0
+--      hr_cs1 => hr_cs1
       );
   
   slow_devices0: entity work.slow_devices
@@ -398,7 +403,8 @@ begin
       );
   
   machine0: entity work.machine
-    generic map (cpufrequency => 40)
+    generic map (cpufrequency => 40,
+                 target => megaphoner1)
     port map (
       pixelclock      => pixelclock,
       cpuclock        => cpuclock,
@@ -554,29 +560,30 @@ begin
       i2c1scl => i2c1scl,
       
       -- This is for modem as PCM master:
-      pcm_modem_clk_in => modem2_pcm_clk_in,
-      pcm_modem_sync_in => modem2_pcm_sync_in,
+      pcm_modem_clk_in => modem1_pcm_clk_in,
+      pcm_modem_sync_in => modem1_pcm_sync_in,
       
-      pcm_modem1_data_out => modem2_pcm_data_out,
-      pcm_modem1_data_in => modem2_pcm_data_in,
+      pcm_modem1_data_out => modem1_pcm_data_out,
+      pcm_modem1_data_in => modem1_pcm_data_in,
       
       ps2data =>      '1',
       ps2clock =>     '1',
 
-      -- Widget board interface stub
-      pmod_start_of_sequence => '0',
-      pmod_data_in => "1111",
-      pmod_clock => '0',
+      widget_matrix_col => (others => '1'),
+      widget_restore => '1',
+      widget_capslock => '1',
+      widget_joya => (others => '1'),
+      widget_joyb => (others => '1'),      
       
       -- C65 UART
       uart_rx => c65uart_rx,
 --      uart_tx => jclo(2),
 
       -- Buffered UARTs for cellular modems etc
-      buffereduart_rx => modem2_uart_rx,
-      buffereduart_tx => modem2_uart_tx,
-      buffereduart2_rx => modem1_uart_rx,
-      buffereduart2_tx => modem1_uart_tx,
+      buffereduart_rx => modem1_uart_rx,
+      buffereduart_tx => modem1_uart_tx,
+      buffereduart2_rx => modem2_uart_rx,
+      buffereduart2_tx => modem2_uart_tx,
       buffereduart_ringindicate => '0',
       
       slow_access_request_toggle => slow_access_request_toggle,

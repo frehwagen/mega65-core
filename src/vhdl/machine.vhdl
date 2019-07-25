@@ -41,6 +41,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 use ieee.numeric_std.all;
 use Std.TextIO.all;
 use work.victypes.all;
+use work.cputypes.all;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -52,7 +53,8 @@ use work.victypes.all;
 --use UNISIM.VComponents.all;
 
 entity machine is
-  generic (cpufrequency : integer := 50);
+  generic (cpufrequency : integer := 50;
+           target : mega65_target_t );
   Port ( pixelclock : in STD_LOGIC;
          cpuclock : in std_logic;
          clock50mhz : in std_logic;  -- normal ethernet clock
@@ -266,13 +268,16 @@ entity machine is
          ps2clock : in std_logic;
 
          ----------------------------------------------------------------------
-         -- PMOD interface for keyboard, joystick, expansion port etc board.
+         -- PMOD and related interfaces for keyboard, joystick, expansion port etc board.
          ----------------------------------------------------------------------
-         pmod_clock : in std_logic;
-         pmod_start_of_sequence : in std_logic;
-         pmod_data_in : in std_logic_vector(3 downto 0);
-         pmod_data_out : out std_logic_vector(1 downto 0);
-         pmoda : inout std_logic_vector(7 downto 0);
+
+        -- Widget board / MEGA65R2 keyboard
+        widget_matrix_col_idx : out integer range 0 to 8 := 0;
+        widget_matrix_col : in std_logic_vector(7 downto 0);
+        widget_restore : in std_logic;
+        widget_capslock : in std_logic;
+        widget_joya : in std_logic_vector(4 downto 0);
+        widget_joyb : in std_logic_vector(4 downto 0);
 
          uart_rx : inout std_logic;
          uart_tx : out std_logic;
@@ -433,7 +438,6 @@ architecture Behavioral of machine is
   
   signal drive_led : std_logic;
   signal motor : std_logic;
-  signal drive_led_out : std_logic;
   
   signal seg_led_data : unsigned(31 downto 0);
 
@@ -738,7 +742,7 @@ begin
       led(6) <= external_pixel_strobe;
       led(7) <= external_frame_x_zero;      
       led(8) <= external_frame_y_zero;      
-      led(9) <= drive_led_out;
+      led(9) <= drive_led;
       led(10) <= cpu_hypervisor_mode;
       led(11) <= hyper_trap;
       led(12) <= hyper_trap_combined;
@@ -856,7 +860,8 @@ begin
 
   cpu0: entity work.gs4510
     generic map(
-      cpufrequency => cpufrequency)
+      cpufrequency => cpufrequency,
+      target => target)
     port map(
       phi0 => phi0,
       all_pause => all_pause,
@@ -1002,6 +1007,7 @@ begin
 
   pixel0: entity work.pixel_driver
     port map (
+      cpuclock => cpuclock,
       clock80 => pixelclock,
       clock120 => clock120,
       clock240 => clock240,
@@ -1053,6 +1059,10 @@ begin
 
       irq             => vic_irq,
       reset           => reset_combined,
+
+      touch_active => osk_touch1_valid,
+      touch_x => osk_touch1_x,    
+      touch_y => osk_touch1_y,
       
       -- Configuration information for pixel_driver
       pal50_select => pal50_select,
@@ -1077,9 +1087,8 @@ begin
 
       test_pattern_enable => test_pattern_enable,
       
-      led => drive_led,
-      motor => motor,
-      drive_led_out => drive_led_out,
+      led => '0',
+      motor => '0',
 
       xray_mode => xray_mode,
       d031_written => d031_write_toggle,
@@ -1270,6 +1279,7 @@ begin
       );
   
   iomapper0: entity work.iomapper
+    generic map ( target => target )
     port map (
       clk => ioclock,
       clock200mhz => clock200,
@@ -1351,7 +1361,6 @@ begin
       colourram_at_dc00 => colourram_at_dc00,
       drive_led => drive_led,
       motor => motor,
-      drive_led_out => drive_led_out,
       sw => sw,
       btn => btn,
 --    seg_led => seg_led_data,
@@ -1466,13 +1475,13 @@ begin
       pixel_newframe => pixel_newframe,
       pixel_newraster => pixel_newraster,
 
-      pmod_clock => pmodb_in_buffer(0),
-      pmod_start_of_sequence => pmodb_in_buffer(1),
-      pmod_data_in => pmodb_in_buffer(5 downto 2),
-      pmod_data_out => pmodb_out_buffer(1 downto 0),
+      widget_matrix_col_idx => widget_matrix_col_idx,
+      widget_matrix_col => widget_matrix_col,
+      widget_restore => widget_restore,
+      widget_capslock => widget_capslock,
+      widget_joya => widget_joya,
+      widget_joyb => widget_joyb,     
       
-      pmoda => pmoda,
-
       hdmi_sda => hdmi_sda,
       hdmi_scl => hdmi_scl,    
 
@@ -1650,11 +1659,7 @@ begin
       osk_touch1_key <= osk_touch1_key_driver;
       osk_touch2_key <= osk_touch2_key_driver;
       
-      pmodb_in_buffer(0) <= pmod_clock;
-      pmodb_in_buffer(1) <= pmod_start_of_sequence;
-      pmodb_in_buffer(5 downto 2) <= pmod_data_in;
-      pmod_data_out <= pmodb_out_buffer;
-      flopled <= drive_led_out;
+      flopled <= drive_led;
       flopmotor <= motor;
 
       -- Generate 2MHz for SIDs from CPUCLOCK / 20

@@ -451,6 +451,9 @@ reset_machine_state:
 		lda #$6b    ; 01101011
 		sta hypervisor_feature_enables
 
+		lda #$ff
+		sta $d7fd
+
 		jsr audiomix_setup
 		; enable audio amplifier
 		lda #$01
@@ -527,7 +530,10 @@ reset_machine_state:
 		; Access cartridge IO area to force EXROM probe on R1 PCBs
 		; XXX DONT READ $DExx ! This is a known crash causer for Action Replay
 		; cartridges.  $DF00 should be okay, however.
-		lda $df00
+		; XXX $DFxx can also be a problem for other cartridges, so we shouldn't do either.
+		; this will mean cartridges don't work on the R1 PCB, but as that is no longer being
+		; developed for, we can just ignore that now, and not touch anything.
+;		lda $df00
 
 		jsr resetdisplay
 
@@ -610,7 +616,7 @@ normalboot:
 		lda #$01
 		sta $d680
 
-		ldx #$0f
+		ldx #$03
 @morewaiting:
 		jsr sdwaitawhile
 
@@ -2080,6 +2086,7 @@ phd1:		sta (<zptempp2),y
 
 go64:
 
+
 ; Transfer control to C64 kernel.
 ; (This also allows entry to C65 mode, because the
 ;  C64-mode kernel on the C65 checks if C65 mode
@@ -2147,6 +2154,13 @@ g61:		sta $0800,x
 		; This must happen last, so that the ultimax cartridge
 		; reset vector is used, instead of the one in the loaded ROM
 		jsr setup_for_ultimax_cartridge
+
+		; Apply RESET to cartridge for a little while so that cartridges
+		; with capacitors tied to EXROM or GAME are visible.
+		; Do this last, because some cartridges remain visible for as little
+		; as 512 usec.
+
+		jsr reset_cartridge
 
 		; exit from hypervisor to start machine
 		sta hypervisor_enterexit_trigger

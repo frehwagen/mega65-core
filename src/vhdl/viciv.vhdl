@@ -76,10 +76,15 @@ entity viciv is
 
     reset : in std_logic;
 
+    -- Touch event to simulate light pen
+    touch_x : in unsigned(13 downto 0);
+    touch_y : in unsigned(11 downto 0);
+    touch_active : in std_logic := '0';
+    
     -- Internal drive LED status for OSD
     led : in std_logic;
     motor : in std_logic;
-
+   
     -- Actual drive LED (including blink status) for keyboard
     -- (the F011 does this on a real C65)
     drive_led_out : out std_logic;
@@ -186,7 +191,9 @@ architecture Behavioral of viciv is
 
   signal before_y_chargen_start : std_logic := '1';
   signal justbefore_y_chargen_start : std_logic := '0';
-
+  signal stop_chargen_raster_counter : unsigned(7 downto 0) := x"00";
+  signal stop_chargen_delay : unsigned(7 downto 0) := to_unsigned(3,8);
+  
   signal vicii_2mhz_internal : std_logic := '1';
   signal viciii_fast_internal : std_logic := '1';
   signal viciv_fast_internal : std_logic := '1';
@@ -200,6 +207,7 @@ architecture Behavioral of viciv is
   signal reg_h640_delayed : std_logic := '0';
   signal reg_h1280_delayed : std_logic := '0';
   signal external_frame_x_zero_latched : std_logic := '0';
+  signal last_external_frame_x_zero_latched : std_logic := '0';
 
   -- last value written to key register
   signal reg_key : unsigned(7 downto 0) := x"00";
@@ -264,7 +272,9 @@ architecture Behavioral of viciv is
   -- (Sprite fetching should happen as soon as the border begins, so that we have
   -- maximum time to do the fetch.)
   constant display_fetch_start : unsigned(11 downto 0) := to_unsigned(800,12);
-  constant display_height : unsigned(11 downto 0) := to_unsigned(600,12);
+  constant display_height_pal : unsigned(11 downto 0) := to_unsigned(600,12);
+  constant display_height_ntsc : unsigned(11 downto 0) := to_unsigned(470,12);
+  signal display_height : unsigned(11 downto 0);
   signal raster_buffer_half_toggle : std_logic := '0';
   signal vsync_delay : unsigned(7 downto 0) := to_unsigned(0,8);
   signal vsync_delay_drive : unsigned(7 downto 0) := to_unsigned(0,8);
@@ -280,7 +290,6 @@ architecture Behavioral of viciv is
   signal x_chargen_start : unsigned(13 downto 0) := to_unsigned(to_integer(frame_h_front),14);
 
   -- PAL/NTSC raster layout
-  signal vertical_flyback : std_logic := '0';
   signal vicii_first_raster : unsigned(8 downto 0) := to_unsigned(0,9);
   -- We use full number of PAL rasters in NTSC mode, so that PAL programs will
   -- run correctly, even if at 60Hz video / interrupt rate.  The only problem I
@@ -521,6 +530,8 @@ architecture Behavioral of viciv is
   -- And display_row_width is how many characters to display on each row
   signal display_row_width : unsigned(7 downto 0) := to_unsigned(40,8);
   signal display_row_width_minus1 : unsigned(7 downto 0) := to_unsigned(40,8);
+  signal display_row_count : unsigned(7 downto 0) := to_unsigned(25-1,8);
+  signal display_row_number : unsigned(7 downto 0) := to_unsigned(25,8);
 
   signal end_of_row_16 : std_logic := '0';
   signal end_of_row : std_logic := '0';
@@ -687,12 +698,15 @@ architecture Behavioral of viciv is
   signal vicii_sprite_bitmap_collisions : std_logic_vector(7 downto 0);
 
   signal viciii_extended_attributes : std_logic := '1';
+  signal irq_lightpen : std_logic := '0';
   signal irq_collisionspritesprite : std_logic := '0';
   signal irq_collisionspritebitmap : std_logic := '0';
   signal irq_raster : std_logic := '0';
+  signal ack_lightpen : std_logic := '0';
   signal ack_collisionspritesprite : std_logic := '0';
   signal ack_collisionspritebitmap : std_logic := '0';
   signal ack_raster : std_logic := '0';
+  signal mask_lightpen : std_logic := '0';
   signal mask_collisionspritesprite : std_logic := '0';
   signal mask_collisionspritebitmap : std_logic := '0';
   signal mask_raster : std_logic := '0';
@@ -701,6 +715,9 @@ architecture Behavioral of viciv is
   signal clear_collisionspritesprite : std_logic := '0';
   signal clear_collisionspritesprite_1 : std_logic := '0';
 
+  signal lightpen_x_latch : unsigned(7 downto 0);
+  signal lightpen_y_latch : unsigned(7 downto 0);
+  
   -- Used for hardware character blinking ala C65
   signal viciii_blink_phase : std_logic := '0';
   -- 60 frames = 1 second, and means no tearing.
@@ -1246,7 +1263,7 @@ begin
           sprite_extended_height_size,sprite_extended_width_enables,
           chargen_x_scale_drive,single_side_border,
           sprite_first_x,sprite_sixteen_colour_enables,
-          vicii_ntsc,vicii_first_raster,vertical_flyback,
+          vicii_ntsc,vicii_first_raster,
           palette_bank_chargen_alt,bitplane_sixteen_colour_mode_flags,
           vsync_delay,vicii_ycounter_scale_minus_zero,
           hsync_polarity_internal,vsync_polarity_internal
@@ -1281,7 +1298,7 @@ begin
         if reg_h640='0' then
           border_x_left <= to_unsigned(to_integer(frame_h_front)+to_integer(single_side_border),14);
           border_x_right <= to_unsigned(to_integer(frame_h_front)+to_integer(display_width)
-                                        -to_integer(single_side_border),14);
+                                        -to_integer(single_side_border)+1,14);
           x_chargen_start
             <= to_unsigned(to_integer(frame_h_front)
                            +to_integer(single_side_border)
@@ -1289,6 +1306,7 @@ begin
                            -- pixels are H640/800, so add double
                            +to_integer(vicii_x_smoothscroll)
                            +to_integer(vicii_x_smoothscroll)
+                           +1
                            ,14);
         else
           border_x_left <= to_unsigned(to_integer(frame_h_front)+to_integer(single_side_border),14);
@@ -1357,6 +1375,7 @@ begin
       end if;
 
       if reg_v400='0' then
+        display_row_count <= to_unsigned(25-1,8);
         chargen_y_scale <= to_unsigned(to_integer(chargen_y_scale_200)-1,8);
         -- set vertical borders based on twentyfourlines
         if twentyfourlines='0' then
@@ -1391,6 +1410,7 @@ begin
 
       else
         -- V400 mode : as above, but with the different constants
+        display_row_count <= to_unsigned(50-1,8);        
         chargen_y_scale <= to_unsigned(to_integer(chargen_y_scale_400)-1,8);
         -- set vertical borders based on twentyfourlines
         if twentyfourlines='0' then
@@ -1639,9 +1659,9 @@ begin
         elsif register_number=18 then          -- $D012 current raster low 8 bits
           fastio_rdata <= std_logic_vector(vicii_ycounter_minus_one(7 downto 0));
         elsif register_number=19 then          -- $D013 lightpen X (coarse rasterX)
-          fastio_rdata <= std_logic_vector(xcounter_drive(11 downto 4));
+          fastio_rdata <= std_logic_vector(lightpen_x_latch);
         elsif register_number=20 then          -- $D014 lightpen Y (coarse rasterY)
-          fastio_rdata <= std_logic_vector(displayy(10 downto 3));
+          fastio_rdata <= std_logic_vector(lightpen_y_latch);
         elsif register_number=21 then          -- $D015 compatibility sprite enable
           fastio_rdata <= vicii_sprite_enables;
         elsif register_number=22 then          -- $D016
@@ -1663,7 +1683,7 @@ begin
           fastio_rdata(6) <= '1';       -- NC
           fastio_rdata(5) <= '1';       -- NC
           fastio_rdata(4) <= '1';       -- NC
-          fastio_rdata(3) <= '0';       -- lightpen
+          fastio_rdata(3) <= irq_lightpen;
           fastio_rdata(2) <= irq_collisionspritesprite;
           fastio_rdata(1) <= irq_collisionspritebitmap;
           fastio_rdata(0) <= irq_raster;
@@ -1672,7 +1692,7 @@ begin
           fastio_rdata(6) <= '1';       -- NC
           fastio_rdata(5) <= '1';       -- NC
           fastio_rdata(4) <= '1';       -- NC
-          fastio_rdata(3) <= '1';       -- lightpen
+          fastio_rdata(3) <= mask_lightpen;
           fastio_rdata(2) <= mask_collisionspritesprite;
           fastio_rdata(1) <= mask_collisionspritebitmap;
           fastio_rdata(0) <= mask_raster;
@@ -1902,8 +1922,7 @@ begin
         elsif register_number=111 then
           fastio_rdata(7) <= vicii_ntsc;
           fastio_rdata(6) <= '0';
-          fastio_rdata(5 downto 1) <= std_logic_vector(vicii_first_raster(5 downto 1));
-          fastio_rdata(0) <= vertical_flyback;
+          fastio_rdata(5 downto 0) <= std_logic_vector(vicii_first_raster(5 downto 0));
         elsif register_number=112 then -- $D3070
           fastio_rdata <= palette_bank_fastio & palette_bank_chargen & palette_bank_sprites & palette_bank_chargen_alt;
         elsif register_number=113 then -- $D3071
@@ -1930,7 +1949,7 @@ begin
           fastio_rdata(6 downto 3) <= (others => '0');
 	  fastio_rdata(7) <= vicii_is_raster_source;
         elsif register_number=123 then  -- $D307B
-          fastio_rdata <= x"FF";
+          fastio_rdata <= std_logic_vector(display_row_count);
         elsif register_number=124 then  -- $D307C
           fastio_rdata(3 downto 0) <= x"F";
           fastio_rdata(4) <= hsync_polarity_internal;
@@ -1940,7 +1959,9 @@ begin
           -- fastio_rdata <=
           --  std_logic_vector(to_unsigned(vic_paint_fsm'pos(debug_paint_fsm_state_drive2),8));
           -- fastio_rdata <= std_logic_vector(debug_charaddress_drive2(7 downto 0));
-          fastio_rdata <= x"FF";
+          -- fastio_rdata <= x"FF";
+          -- XXX debug: $D07D shows current single top border height
+          fastio_rdata <= std_logic_vector(single_top_border_200(7 downto 0));
         elsif register_number=126 then
           -- fastio_rdata <= "0000"
           -- & std_logic_vector(debug_charaddress_drive2(11 downto 8));
@@ -1974,6 +1995,12 @@ begin
 
     if rising_edge(ioclock) then
 
+      if vicii_ntsc='1' then
+        display_height <= display_height_ntsc;
+      else
+        display_height <= display_height_pal;
+      end if;
+      
       vicii_raster_out(8 downto 0) <= vicii_ycounter_driver;
       vicii_raster_out(11 downto 9) <= "000";
 
@@ -2060,6 +2087,7 @@ begin
         viciv_single_side_border_width_touched <= '0';
       end if;
 
+      ack_lightpen <= '0';
       ack_collisionspritesprite <= '0';
       ack_collisionspritebitmap <= '0';
       ack_raster <= '0';
@@ -2100,7 +2128,7 @@ begin
         vicii_sprite_pointer_address(15) <= not fastio_wdata(1);
         vicii_sprite_pointer_address(14) <= not fastio_wdata(0);
       end if;
-
+      
       -- Reading some registers clears IRQ flags
       clear_collisionspritebitmap_1 <= '0';
       clear_collisionspritesprite_1 <= '0';
@@ -2206,6 +2234,8 @@ begin
           -- @IO:C64 $D019 VIC-II IRQ control
           -- Acknowledge IRQs
           -- (we need to pass this to the dotclock side to avoide multiple drivers)
+          -- @IO:C64 $D019.3 VIC-II:ILP light pen indicate or acknowledge
+          ack_lightpen <= fastio_wdata(3);
           -- @IO:C64 $D019.2 VIC-II:ISSC sprite:sprite collision indicate or acknowledge
           ack_collisionspritesprite <= fastio_wdata(2);
           -- @IO:C64 $D019.1 VIC-II:ISBC sprite:bitmap collision indicate or acknowledge
@@ -2287,15 +2317,23 @@ begin
             multi3_colour <= unsigned(fastio_wdata);
           end if;
         elsif register_number=37 then
-          -- @IO:C64 $D025 VIC-II:SPRMC0 Sprite multi-colour 0 (always 256 colour)
+          -- @IO:C64 $D025 VIC-II:SPRMC0 Sprite multi-colour 0
           -- @IO:C65 $D025 VIC-III:SPRMC0 Sprite multi-colour 0 (8-bit for selection of any palette colour)
           -- @IO:GS $D025 VIC-IV:SPRMC0 Sprite multi-colour 0 (8-bit for selection of any palette colour)
-          sprite_multi0_colour <= unsigned(fastio_wdata);
+          if (register_bank=x"D0" or register_bank=x"D2") then
+            sprite_multi0_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
+          else
+            sprite_multi0_colour <= unsigned(fastio_wdata);
+          end if;
         elsif register_number=38 then
-          -- @IO:C64 $D026 VIC-II:SPRMC1 Sprite multi-colour 1 (always 256 colour)
+          -- @IO:C64 $D026 VIC-II:SPRMC1 Sprite multi-colour 1
           -- @IO:C65 $D026 VIC-III:SPRMC1 Sprite multi-colour 1 (8-bit for selection of any palette colour)
           -- @IO:GS $D026 VIC-IV:SPRMC1 Sprite multi-colour 1 (8-bit for selection of any palette colour)
-          sprite_multi1_colour <= unsigned(fastio_wdata);
+          if (register_bank=x"D0" or register_bank=x"D2") then
+            sprite_multi1_colour <= unsigned("0000"&fastio_wdata(3 downto 0));
+          else
+            sprite_multi1_colour <= unsigned(fastio_wdata);
+          end if;
         elsif register_number>=39 and register_number<=46 then
           -- @IO:C64 $D027 VIC-II:SPR0COL sprite 0 colour / 16-colour sprite transparency colour (lower nybl)
           -- @IO:C64 $D028 VIC-II:SPR1COL sprite 1 colour / 16-colour sprite transparency colour (lower nybl)
@@ -2711,8 +2749,8 @@ begin
           vicii_raster_compare(10 downto 8) <= unsigned(fastio_wdata(2 downto 0));
           vicii_is_raster_source <= fastio_wdata(7);
         elsif register_number=123 then
-          -- @IO:GS $D07B VIC-IV:RESERVED UNUSED
-          null;
+          -- @IO:GS $D07B VIC-IV:Number of text rows to display
+          display_row_count <= unsigned(fastio_wdata);
         elsif register_number=124 then
           -- @IO:GS $D07C.0-3 VIC-IV:RESERVED UNUSED BITS
           null;
@@ -2859,13 +2897,24 @@ begin
 
       -- Acknowledge IRQs after reading $D019
       irq_raster <= irq_raster and (not ack_raster);
+      irq_lightpen <= irq_lightpen and (not ack_lightpen);
       irq_collisionspritebitmap <= irq_collisionspritebitmap and (not ack_collisionspritebitmap);
       irq_collisionspritesprite <= irq_collisionspritesprite and (not ack_collisionspritesprite);
       -- Set IRQ line status to CPU
       irq_drive <= not ((irq_raster and mask_raster)
+                        or (irq_lightpen and mask_lightpen)
                         or (irq_collisionspritebitmap and mask_collisionspritebitmap)
                         or (irq_collisionspritesprite and mask_collisionspritesprite));
 
+      -- Detect lightpen event (must appear above irq_lightpen assignment above)
+      if touch_active='1' and xcounter_drive(11 downto 0) = touch_x and displayy = touch_y then
+        irq_lightpen <= '1';
+        lightpen_x_latch <= touch_x(11 downto 4);
+        lightpen_y_latch <= touch_y(9 downto 2);
+      end if;
+      
+
+      
       -- reset masks IRQs immediately
       if irq_drive = '0' then
         irq <= '0';
@@ -2925,6 +2974,7 @@ begin
         end if;
       end if;
 
+      last_external_frame_x_zero_latched <= external_frame_x_zero_latched;
       if external_frame_x_zero_latched = '1' then
         -- End of raster reached.
         -- Bump raster number and start next raster.
@@ -2932,6 +2982,19 @@ begin
         xcounter <= (others => '0');
         sprite_x_counting <= '0';
         sprite_x_scale_toggle <= '0';
+
+        -- Make delayed stopping of chargen rendering take effect
+        -- (this has to happen on the following raster, because we determine
+        -- end of screen when we pre-compute the next row address)
+        if last_external_frame_x_zero_latched = '0' then
+          if stop_chargen_raster_counter /= 0 then
+            stop_chargen_raster_counter <= stop_chargen_raster_counter - 1;
+          end if;
+        end if;
+        if stop_chargen_raster_counter = 1 then
+          before_y_chargen_start <= '1';
+        end if;
+                                 
         vicii_ycounter_scale <= vicii_ycounter_scale_minus_zero;
         report "LEGACY vicii_ycounter_scale = " & integer'image(to_integer(vicii_ycounter_scale))
           & ", vicii_ycounter_max_phase = " & integer'image(to_integer(vicii_ycounter_max_phase))
@@ -3046,11 +3109,11 @@ begin
         first_card_of_row <= (others => '0');
 
         displayy <= (others => '0');
-        vertical_flyback <= '0';
         displayline0 <= '1';
         indisplay := '0';
         report "clearing indisplay because xcounter=0" severity note;
         screen_row_address <= screen_ram_base(19 downto 0);
+        display_row_number <= to_unsigned(0,8);
 
         -- Reset VIC-II raster counter to first raster for top of frame
         -- (the preceeding rasters occur during vertical flyback, in case they
@@ -3178,7 +3241,7 @@ begin
         -- Finally decide which way we should go
         if to_integer(first_card_of_row) /= to_integer(prev_first_card_of_row) then
           raster_fetch_state <= FetchScreenRamLine;
-          if vertical_border='0' then
+          if vertical_border='0' or justbefore_y_chargen_start='1' then
             badline_toggle_internal <= not badline_toggle_internal;
             badline_toggle <= not badline_toggle_internal;
             report "BADLINE @ y = " & integer'image(to_integer(displayy)) severity note;
@@ -3241,6 +3304,11 @@ begin
             -- Increment card number every "bad line"
             report "LEGACY: Advancing first_card_of_row due to end of character";
             first_card_of_row <= to_unsigned(to_integer(first_card_of_row) + row_advance,16);
+            display_row_number <= display_row_number + 1;
+            if display_row_number = display_row_count then
+              -- Stop chargen on next raster
+              stop_chargen_raster_counter <= stop_chargen_delay;
+            end if;
           else
             report "LEGACY: NOT advancing first_card_of_row due to end of character (before_y_chargen_start=1)";
           end if;
@@ -3291,11 +3359,10 @@ begin
         null;
       elsif ycounter=frame_v_front then
         vert_in_frame <= '1';
-      elsif ycounter=vsync_start then
+      elsif ycounter=0 then
         -- Start of vertical flyback
         indisplay := '0';
         report "clearing indisplay because of vertical porch";
-        vertical_flyback <= '1';
 
         vert_in_frame <= '0';
         -- Send a 1 cycle pulse at the end of each frame for
