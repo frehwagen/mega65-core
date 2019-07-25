@@ -285,7 +285,9 @@ begin
       temp => fpga_temperature);
 
   slow_devices0: entity work.slow_devices
-    port map (
+    generic map (
+                 target => mega65r1)
+	port map (
       cpuclock => cpuclock,
       pixelclock => pixelclock,
       reset => iec_reset_drive,
