@@ -21,6 +21,7 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use ieee.numeric_std.all;
 use Std.TextIO.all;
+use work.cputypes.all;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
@@ -285,8 +286,6 @@ begin
       temp => fpga_temperature);
 
   slow_devices0: entity work.slow_devices
-    generic map (
-                 target => mega65r1)
 	port map (
       cpuclock => cpuclock,
       pixelclock => pixelclock,
