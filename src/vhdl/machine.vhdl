@@ -933,7 +933,7 @@ begin
       monitor_waitstates => monitor_waitstates,
       monitor_request_reflected => monitor_request_reflected,
       monitor_hypervisor_mode => monitor_hypervisor_mode,
-      monitor_pc => monitor_pc,
+      monitor_pc => monitor_instructionpc,
       monitor_watch => monitor_watch,
       monitor_watch_match => monitor_watch_match,
       monitor_opcode => monitor_opcode,
