@@ -353,7 +353,7 @@ begin
       mem_trace_reg[0] <= 1;    // Auto set trace mode on watch address match
       monitor_watch_matched <= 1;    // Also set watch matched bit
   end
-  else if(monitor_break_addr == monitor_pc && monitor_break_en)
+  else if((monitor_break_addr == monitor_pc || monitor_break_addr+1 == monitor_pc) && monitor_break_en)
   begin
       mem_trace_reg[0] <= 1;    // Auto set trace mode on break address match
       monitor_break_matched <= 1;    // Also set break matched bit
