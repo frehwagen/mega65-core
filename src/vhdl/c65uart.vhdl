@@ -219,6 +219,12 @@ architecture behavioural of c65uart is
   signal last_joyswap_key : std_logic := '1';
   signal joyswap_countdown : integer range 0 to 1023 := 0;
   
+  -- VDA emulation registers
+  signal reg_vdc_reg : std_logic_vector(7 downto 0) := x"00";
+  signal reg_vdc_data : std_logic_vector(7 downto 0) := x"00";
+  signal reg_vdc_status : std_logic_vector(7 downto 0) := x"00";
+  signal virtual_vdc_enable : std_logic := '1';
+  
 begin  -- behavioural
   
   process(pixelclock,cpuclock,fastio_address,fastio_write
@@ -438,6 +444,15 @@ begin  -- behavioural
             suppress_key_retrigger <= not fastio_wdata(6);
             -- @IO:GS $D61B.7 WRITEONLY DEBUG disable ASCII key glitch suppression
             suppress_key_glitches <= not fastio_wdata(7);
+          when x"25" =>
+            -- @IO:GS $D625 VDC emulation, holds the reg data written to $D600 last
+            reg_vdc_reg <= std_logic_vector(fastio_wdata);
+          when x"26" =>
+            -- @IO:GS $D626 VDC emulation, holds the data written to $D601 last
+            reg_vdc_data <= std_logic_vector(fastio_wdata);
+          when x"27" =>
+            -- @IO:GS $D627 VDC emulation, holds the opeartion status returned when reading $D601
+            reg_vdc_status <= std_logic_vector(fastio_wdata);
           when others => null;
         end case;
       end if;
@@ -452,7 +467,11 @@ begin  -- behavioural
       case register_number is
         when x"00" =>
           -- @IO:C65 $D600 UART:DATA UART data register (read or write)
-          fastio_rdata <= unsigned(reg_data_rx_drive);            
+          if virtual_vdc_enable='1' then
+            fastio_rdata <= reg_vdc_status(7 downto 0);            
+          else
+            fastio_rdata <= unsigned(reg_data_rx_drive);            
+          end if;
         when x"01" =>
           -- @IO:C65 $D601 C65 UART status register
           -- @IO:C65 $D601.0 UART:RXRDY UART RX byte ready flag (clear by reading \$D600)
@@ -612,8 +631,8 @@ begin  -- behavioural
         when x"1d" =>
           -- @IO:GS $D61D DEBUG:ASCKEYCNT ASCII key event counter LSB
           -- @IO:GS $D61E DEBUG:ASCKEYCNT ASCII key event counter MSB
-          fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
         when x"1e" =>
+        fastio_rdata(7 downto 0) <= ascii_key_event_count(7 downto 0);
           fastio_rdata(7 downto 0) <= ascii_key_event_count(15 downto 8);
         when x"1F" =>
           -- @IO:GS $D61F DEBUG:BUCKYCOPY DUPLICATE Modifier key state (hardware accelerated keyboard scanner).
@@ -638,6 +657,15 @@ begin  -- behavioural
           fastio_rdata(5) <= fa_poty;
           fastio_rdata(6) <= fb_potx;
           fastio_rdata(7) <= fb_poty;                        
+        when x"25" =>
+          -- @IO:GS $D625 VDC emulation, read the registers value last written to $D600
+          fastio_rdata(7 downto 0) <= reg_vdc_reg;
+        when x"26" =>
+          -- @IO:GS $D626 VDC emulation, data register value last written to $D601
+          fastio_rdata(7 downto 0) <= reg_vdc_data;
+        when x"27" =>
+          -- @IO:GS $D627 VDC emulation, status registers as returned by reading $D600
+          fastio_rdata(7 downto 0) <= reg_vdc_status;
         when others =>
           report "Reading untied register, result = Z";
           fastio_rdata <= (others => 'Z');
