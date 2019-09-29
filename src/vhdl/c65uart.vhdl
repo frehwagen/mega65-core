@@ -659,13 +659,13 @@ begin  -- behavioural
           fastio_rdata(7) <= fb_poty;                        
         when x"25" =>
           -- @IO:GS $D625 VDC emulation, read the registers value last written to $D600
-          fastio_rdata(7 downto 0) <= reg_vdc_reg;
+          fastio_rdata(7 downto 0) <= unsigned(reg_vdc_reg);
         when x"26" =>
           -- @IO:GS $D626 VDC emulation, data register value last written to $D601
-          fastio_rdata(7 downto 0) <= reg_vdc_data;
+          fastio_rdata(7 downto 0) <= unsigned(reg_vdc_data);
         when x"27" =>
           -- @IO:GS $D627 VDC emulation, status registers as returned by reading $D600
-          fastio_rdata(7 downto 0) <= reg_vdc_status;
+          fastio_rdata(7 downto 0) <= unsigned(reg_vdc_status);
         when others =>
           report "Reading untied register, result = Z";
           fastio_rdata <= (others => 'Z');
