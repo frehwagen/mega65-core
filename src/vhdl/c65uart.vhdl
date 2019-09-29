@@ -222,7 +222,7 @@ architecture behavioural of c65uart is
   -- VDA emulation registers
   signal reg_vdc_reg : std_logic_vector(7 downto 0) := x"00";
   signal reg_vdc_data : std_logic_vector(7 downto 0) := x"00";
-  signal reg_vdc_status : std_logic_vector(7 downto 0) := x"00";
+  signal reg_vdc_status : std_logic_vector(7 downto 0) := x"80";
   signal virtual_vdc_enable : std_logic := '1';
   
 begin  -- behavioural
