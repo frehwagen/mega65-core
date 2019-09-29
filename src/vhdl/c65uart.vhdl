@@ -468,7 +468,7 @@ begin  -- behavioural
         when x"00" =>
           -- @IO:C65 $D600 UART:DATA UART data register (read or write)
           if virtual_vdc_enable='1' then
-            fastio_rdata <= reg_vdc_status(7 downto 0);            
+            fastio_rdata <= unsigned(reg_vdc_status(7 downto 0));            
           else
             fastio_rdata <= unsigned(reg_data_rx_drive);            
           end if;
