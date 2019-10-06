@@ -61,6 +61,8 @@ entity gs4510 is
     matrix_trap_in : in std_logic;
     hyper_trap_f011_read : in std_logic;
     hyper_trap_f011_write : in std_logic;
+    hyper_trap_vdc_reg : in std_logic;
+    hyper_trap_vdc_data : in std_logic;
     --Protected Hardware Bits
     --Bit 0: TBD
     --Bit 1: TBD
@@ -540,6 +542,8 @@ architecture Behavioural of gs4510 is
   signal matrix_trap_pending : std_logic := '0';
   signal f011_read_trap_pending : std_logic := '0';
   signal f011_write_trap_pending : std_logic := '0';
+  signal vdc_reg_trap_pending : std_logic := '0';
+  signal vdc_data_trap_pending : std_logic := '0';
   -- To defer interrupts in the hypervisor, we have a special mechanism for this.
   signal irq_defer_request : std_logic := '0';
   signal irq_defer_counter : integer range 0 to 65535 := 0;
@@ -3261,7 +3265,7 @@ begin
         hyper_trap_edge <= '0';
       end if;
       hyper_trap_last <= hyper_trap;
-      if (hyper_trap_edge = '1' or matrix_trap_in ='1' or hyper_trap_f011_read = '1' or hyper_trap_f011_write = '1')
+      if (hyper_trap_edge = '1' or matrix_trap_in ='1' or hyper_trap_f011_read = '1' or hyper_trap_f011_write = '1' or hyper_trap_vdc_reg = '1' or hyper_trap_vdc_data = '1')
         and hyper_trap_state = '1' then
         hyper_trap_state <= '0';
         hyper_trap_pending <= '1'; 
@@ -3271,6 +3275,10 @@ begin
           f011_read_trap_pending <='1';
         elsif hyper_trap_f011_write='1' then 
           f011_write_trap_pending <='1';
+        elsif hyper_trap_vdc_reg='1' then 
+          vdc_reg_trap_pending <='1';
+        elsif hyper_trap_vdc_data='1' then 
+          vdc_data_trap_pending <='1';
         end if;
       else
         hyper_trap_state <= '1';
@@ -4454,6 +4462,14 @@ begin
                                         -- Trap #69 ($45) = SD/F011 write sector
                   hypervisor_trap_port <= "1000101";
                   f011_write_trap_pending <= '0';
+                elsif vdc_reg_trap_pending = '1' then
+                                        -- Trap #70 ($46) = VDC reg write
+                  hypervisor_trap_port <= "1000110";
+                  vdc_reg_trap_pending <= '0';
+                elsif vdc_data_trap_pending = '1' then
+                                        -- Trap #71 ($47) = VDC data write
+                  hypervisor_trap_port <= "1000111";
+                  vdc_data_trap_pending <= '0';
                 else
                                         -- Trap #66 ($42) = RESTORE key double-tap
                   hypervisor_trap_port <= "1000010";                     

@@ -83,7 +83,10 @@ entity c65uart is
     suppress_key_retrigger : out std_logic := '0';
     ascii_key_event_count : in unsigned(15 downto 0)
     
-    );
+    hypervisor_mode : in std_logic;
+    hyper_trap_vdc_reg : out std_logic := '0';
+    hyper_trap_vdc_data : out std_logic := '0';
+);
 end c65uart;
 
 architecture behavioural of c65uart is
@@ -222,7 +225,7 @@ architecture behavioural of c65uart is
   -- VDA emulation registers
   signal reg_vdc_reg : std_logic_vector(7 downto 0) := x"00";
   signal reg_vdc_data : std_logic_vector(7 downto 0) := x"00";
-  signal reg_vdc_status : std_logic_vector(7 downto 0) := x"80";
+  signal reg_vdc_status : std_logic_vector(7 downto 0) := x"00";
   signal virtual_vdc_enable : std_logic := '1';
   
 begin  -- behavioural
@@ -358,14 +361,32 @@ begin  -- behavioural
         end if;
       end loop;
       
+      if ( hypervisor_mode='1' ) Then
+        hyper_trap_vdc_reg <= '0';
+	hyper_trap_vdc_data <= '0';
+      end if;
+      
       -- Check for register writing
       if (fastio_write='1') and (c65uart_cs='1') then
         case register_number is
           when x"00" =>
-            reg_data_tx <= std_logic_vector(fastio_wdata);
-            reg_status5_tx_eot <= '0';
-            reg_status6_tx_empty <= '0';
+            if virtual_vdc_enable='1' then
+              reg_vdc_reg <= std_logic_vector(fastio_wdata);
+              if hypervisor_mode='0' then
+                hyper_trap_vdc_reg <= '1';
+              end if;
+            else
+              reg_data_tx <= std_logic_vector(fastio_wdata);
+              reg_status5_tx_eot <= '0';
+              reg_status6_tx_empty <= '0';
+            end if;
           when x"01" => null;
+            if virtual_vdc_enable='1' then
+              reg_vdc_data <= std_logic_vector(fastio_wdata);
+              if hypervisor_mode='0' then
+                hyper_trap_vdc_data <= '1';
+              end if;
+            end if;
           when x"02" =>
             reg_ctrl0_parity_even <= fastio_wdata(0);
             reg_ctrl1_parity_enable <= fastio_wdata(1);

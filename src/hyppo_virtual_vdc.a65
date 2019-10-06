@@ -1,0 +1,8 @@
+vdc_reg_write:
+
+        sta hypervisor_enterexit_trigger
+
+vdc_data_write:
+
+ 	sta hypervisor_enterexit_trigger
+

@@ -254,10 +254,12 @@ trap_entry_points:
 	jmp f011_virtual_write	        ; Trap #$45 (virtualised F011 sector write)
 	nop
 
-	jmp nosuchtrap			; common-trap (catch all)
-	nop				; refer: below in this file
-	jmp nosuchtrap
+	jmp vdc_reg_write		; Trap #$46 (VDC register write)
+	nop	
+				
+	jmp vdc_data_write		; Trap #$47 (VDC data write)
 	nop
+	
 	jmp nosuchtrap
 	nop
 	jmp nosuchtrap

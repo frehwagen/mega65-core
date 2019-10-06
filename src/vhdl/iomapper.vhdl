@@ -40,6 +40,8 @@ entity iomapper is
         hyper_trap_f011_read : out std_logic;
         hyper_trap_f011_write : out std_logic;
         hyper_trap_count : out unsigned(7 downto 0);
+	hyper_trap_vdc_reg : out std_logic;
+        hyper_trap_vdc_data : out std_logic;
 
         joy3 : in std_logic_vector(4 downto 0);
         joy4 : in std_logic_vector(4 downto 0);
@@ -681,6 +683,9 @@ begin
       phi0 => phi0,
       reset => reset,
 --      irq => nmi,
+      hypervisor_mode => cpu_hypervisor_mode,
+      hyper_trap_vdc_reg => hyper_trap_vdc_reg,
+      hyper_trap_vdc_data => hyper_trap_vdc_data,
       fastio_address => unsigned(address(19 downto 0)),
       fastio_write => w,
       fastio_read => r,
