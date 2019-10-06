@@ -12,7 +12,7 @@ HYPPOSRCS = hyppo.a65 \
 		hyppo_dos.a65 \
 		hyppo_task.a65 \
 		hyppo_virtual_f011.a65 \
-		hyppe_virtual_vdc.a65 \
+		hyppo_virtual_vdc.a65 \
 		hyppo_mem.a65
 
 # if you want your PRG to appear on "MEGA65.D81", then put your PRG in "./src/utilities/userPRGs"
