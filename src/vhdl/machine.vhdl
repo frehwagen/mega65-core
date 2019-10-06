@@ -461,6 +461,8 @@ architecture Behavioral of machine is
   signal monitor_hyper_trap : std_logic := '1';
   signal hyper_trap_f011_read : std_logic := '0';
   signal hyper_trap_f011_write : std_logic := '0';
+  signal hyper_trap_vdc_reg : std_logic := '0';
+  signal hyper_trap_vdc_data : std_logic := '0';
   signal hyper_trap_count : unsigned(7 downto 0) := x"00";
 
   signal fastio_addr : std_logic_vector(19 downto 0);
@@ -881,6 +883,8 @@ begin
       hyper_trap => hyper_trap_combined,
       hyper_trap_f011_read => hyper_trap_f011_read,
       hyper_trap_f011_write => hyper_trap_f011_write,    
+      hyper_trap_vdc_reg => hyper_trap_vdc_reg,
+      hyper_trap_vdc_data => hyper_trap_vdc_data,    
       speed_gate => speed_gate,
       speed_gate_enable => speed_gate_enable,
       cpuis6502 => cpuis6502,
@@ -1291,6 +1295,8 @@ begin
       hyper_trap => hyper_trap,
       hyper_trap_f011_read => hyper_trap_f011_read,
       hyper_trap_f011_write => hyper_trap_f011_write,
+      hyper_trap_vdc_reg => hyper_trap_vdc_reg,
+      hyper_trap_vdc_data => hyper_trap_vdc_data,
       hyper_trap_count => hyper_trap_count,
       cpuclock => cpuclock,
       pixelclk => pixelclock,
