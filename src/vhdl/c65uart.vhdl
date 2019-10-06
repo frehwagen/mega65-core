@@ -81,11 +81,11 @@ entity c65uart is
 
     suppress_key_glitches : out std_logic := '1';
     suppress_key_retrigger : out std_logic := '0';
-    ascii_key_event_count : in unsigned(15 downto 0)
+    ascii_key_event_count : in unsigned(15 downto 0);
     
     hypervisor_mode : in std_logic;
     hyper_trap_vdc_reg : out std_logic := '0';
-    hyper_trap_vdc_data : out std_logic := '0';
+    hyper_trap_vdc_data : out std_logic := '0'
 );
 end c65uart;
 
