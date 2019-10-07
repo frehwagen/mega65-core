@@ -2,11 +2,13 @@ vdc_reg_write:
 
         lda #$80
 	sta $D627
+	inc $D020
         sta hypervisor_enterexit_trigger
 
 vdc_data_write:
 
         lda #$80
         sta $D627
+	inc $D020
  	sta hypervisor_enterexit_trigger
 
