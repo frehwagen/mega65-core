@@ -85,7 +85,8 @@ entity c65uart is
     
     hypervisor_mode : in std_logic;
     hyper_trap_vdc_reg : out std_logic := '0';
-    hyper_trap_vdc_data : out std_logic := '0'
+    hyper_trap_vdc_data : out std_logic := '0';
+    hyper_trap_vdc_data_read : out std_logic := '0'
 );
 end c65uart;
 
@@ -364,6 +365,7 @@ begin  -- behavioural
       if ( hypervisor_mode='1' ) Then
         hyper_trap_vdc_reg <= '0';
 	hyper_trap_vdc_data <= '0';
+	hyper_trap_vdc_data_read <= '0';
       end if;
       
       -- Check for register writing
@@ -499,14 +501,21 @@ begin  -- behavioural
           -- @IO:C65 $D601.1 UART:RXOVRRUN UART RX overrun flag (clear by reading \$D600)
           -- @IO:C65 $D601.2 UART:PTYERR UART RX parity error flag (clear by reading \$D600)
           -- @IO:C65 $D601.3 UART:FRMERR UART RX framing error flag (clear by reading \$D600)
-          fastio_rdata(0) <= reg_status0_rx_full_drive;
-          fastio_rdata(1) <= reg_status1_rx_overrun_drive;
-          fastio_rdata(2) <= reg_status2_rx_parity_error_drive;
-          fastio_rdata(3) <= reg_status3_rx_framing_error_drive;
-          fastio_rdata(4) <= reg_status4_rx_idle_mode_drive;
-          fastio_rdata(5) <= reg_status5_tx_eot_drive;
-          fastio_rdata(6) <= reg_status6_tx_empty_drive;
-          fastio_rdata(7) <= reg_status7_xmit_on_drive;              
+          if virtual_vdc_enable='1' then
+            fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
+            if hypervisor_mode='0' then
+              hyper_trap_vdc_data_read <= '1';
+            end if;
+          else
+            fastio_rdata(0) <= reg_status0_rx_full_drive;
+            fastio_rdata(1) <= reg_status1_rx_overrun_drive;
+            fastio_rdata(2) <= reg_status2_rx_parity_error_drive;
+            fastio_rdata(3) <= reg_status3_rx_framing_error_drive;
+            fastio_rdata(4) <= reg_status4_rx_idle_mode_drive;
+            fastio_rdata(5) <= reg_status5_tx_eot_drive;
+            fastio_rdata(6) <= reg_status6_tx_empty_drive;
+            fastio_rdata(7) <= reg_status7_xmit_on_drive;              
+          end if;
         when x"02" =>
           -- @IO:C65 $D602 C65 UART control register
           -- @IO:C65 $D602.0 UART:PTYEVEN UART Parity: 1=even, 0=odd

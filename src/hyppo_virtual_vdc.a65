@@ -7,8 +7,34 @@ vdc_reg_write:
 
 vdc_data_write:
 
+	lda $D025
+	cmp #$12
+	bne @1
+	lda $D026
+	sta vdc_updateAddr+1
+	bra @9
+@1:	cmp #$13
+	bne @2
+	sta vdc_updateAddr
+	bra @9
+@2:	cmp #$1F
+	bne @3
+	ldx #0
+	lda $D026
+	;sta (vdc_updateAddr),x
+	
+	 
+@3:
+@9:
         lda #$80
         sta $D627
 	inc $D020
  	sta hypervisor_enterexit_trigger
 
+vdc_data_read:
+	inc $D020
+	sta hypervisor_enterexit_trigger
+
+
+vdc_updateAddr:
+	.word 0

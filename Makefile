@@ -42,6 +42,7 @@ HYPPOSRCS = $(SRCDIR)/hyppo.a65 \
 		$(SRCDIR)/hyppo_sdfat.a65 \
 		$(SRCDIR)/hyppo_task.a65 \
 		$(SRCDIR)/hyppo_virtual_f011.a65 \
+		$(SRCDIR)/hyppo_virtual_vdc.a65 \
 		$(SRCDIR)/hyppo_debug.a65 \
 		$(SRCDIR)/hyppo_ultimax.a65 \
 		$(SRCDIR)/hyppo_debugtests.a65 \
