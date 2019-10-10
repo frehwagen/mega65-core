@@ -3284,7 +3284,7 @@ begin
         elsif hyper_trap_vdc_data_read='1' then 
             vdc_data_read_trap_pending <='1';
         end if;
-      else
+      elsif (hyper_trap_pending = '0')
         hyper_trap_state <= '1';
       end if;
       
