@@ -494,7 +494,6 @@ begin  -- behavioural
           -- @IO:C65 $D600 UART:DATA UART data register (read or write)
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_status(7 downto 0));            
-	    reg_vdc_status <= "00000000";
           else
             fastio_rdata <= unsigned(reg_data_rx_drive);            
           end if;
@@ -506,6 +505,7 @@ begin  -- behavioural
           -- @IO:C65 $D601.3 UART:FRMERR UART RX framing error flag (clear by reading \$D600)
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
+	    reg_vdc_status <= "00000000";
             if hypervisor_mode='0' then
               hyper_trap_vdc_data_read <= '1';
             end if;
