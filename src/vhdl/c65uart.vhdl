@@ -374,7 +374,7 @@ begin  -- behavioural
           when x"00" =>
             if virtual_vdc_enable='1' then
               reg_vdc_reg <= std_logic_vector(fastio_wdata);
-	      -- reg_vdc_status <= "00000000";
+	      reg_vdc_status <= "00000000";
               if hypervisor_mode='0' then
                 hyper_trap_vdc_reg <= '1';
               end if;
@@ -505,7 +505,7 @@ begin  -- behavioural
           -- @IO:C65 $D601.3 UART:FRMERR UART RX framing error flag (clear by reading \$D600)
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
-	    reg_vdc_status <= "00000000";
+	    -- reg_vdc_status <= "00000000";
             if hypervisor_mode='0' then
               hyper_trap_vdc_data_read <= '1';
             end if;
