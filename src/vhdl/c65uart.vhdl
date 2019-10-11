@@ -374,7 +374,7 @@ begin  -- behavioural
           when x"00" =>
             if virtual_vdc_enable='1' then
               reg_vdc_reg <= std_logic_vector(fastio_wdata);
-	      reg_vdc_status <= "00000000";
+	      -- reg_vdc_status <= "00000000";
               if hypervisor_mode='0' then
                 hyper_trap_vdc_reg <= '1';
               end if;
@@ -386,7 +386,7 @@ begin  -- behavioural
           when x"01" => null;
             if virtual_vdc_enable='1' then
               reg_vdc_data <= std_logic_vector(fastio_wdata);
-	      reg_vdc_status <= "00000000";
+	      reg_vdc_status <= x"00";
               if hypervisor_mode='0' then
                 hyper_trap_vdc_data <= '1';
               end if;
