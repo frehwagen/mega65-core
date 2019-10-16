@@ -6,6 +6,15 @@ vdc_reg_write:
 	beq	@rw2
 	cpz	#$13
 	beq	@rw2
+	cpz	#$20
+	beq	@rw2
+	cpz	#$21
+	beq	@rw2
+	cpz	#$18
+	beq	@rw2
+	cpz	#$1e
+	beq	@rw2
+
 	cpz	#$1F
 	bne	@rw1
 
@@ -57,7 +66,60 @@ vdc_data_write:
 	sta	$D626
 	bra	@9
 
-@2:	cmp	#$1F
+@2:	cmp	#$20
+	bne	@2a
+	lda	$D626
+	sta	vdc_sourceOffset+1
+	lda	#1
+	sta	vdc_updateNeeded
+	jsr	vdc_ensureAddr
+	LDZ	#0
+	EOM
+	lda	(<vdc_updateAddr), Z
+	sta	$D626
+	bra	@9
+
+@2a:	cmp	#$21
+	bne	@2b
+	lda	$D626
+	sta	vdc_sourceOffset
+	lda	#1
+	sta	vdc_updateNeeded
+	jsr	vdc_ensureAddr
+	LDZ	#0
+	EOM
+	lda	(<vdc_updateAddr), Z
+	sta	$D626
+	bra	@9
+
+@2b:	cmp	#$18
+	bne	@2c
+	bra	@9
+	
+@2c:	cmp	#$1e
+	bne	@2d
+	
+	; block move
+	; TODO maybe use DMA
+	jsr	vdc_ensureSrcAddr
+	ldx	$d626
+@2c_:	
+	LDZ	#0
+	EOM
+	lda	(<vdc_srcAddr), Z
+	EOM
+	sta	(<vdc_updateAddr), Z
+	
+	
+	jsr 	vdc_advanceAddr
+	jsr 	vdc_advanceSrcAddr
+
+	dex
+	bne	@2c_
+
+	bra	@9
+	
+@2d:	cmp	#$1F
 	bne	@3
 	; ensure VIC address
 	jsr	vdc_ensureAddr
@@ -97,6 +159,113 @@ vdc_data_read:
 	;inc	$D020
 	sta	hypervisor_enterexit_trigger
 
+
+vdc_ensureSrcAddr:
+	; if recalc is needed, div updateOffset by 640
+	; and calc proper VIC address
+	lda 	#0
+	sta	vdc_srcAddr
+	sta	vdc_srcAddr+1
+
+	lda	vdc_sourceOffset
+	sta	vdc_srcAddr+2
+	lda	vdc_sourceOffset+1
+	sta	vdc_srcAddr+3
+
+	ldx 	#16	        ;repeat for each bit: ...
+
+@ael_:	asl 	vdc_srcAddr+2	;dividend lb & hb*2, msb -> Carry
+	rol 	vdc_srcAddr+3
+	rol 	vdc_srcAddr	;remainder lb & hb * 2 + msb from carry
+	rol 	vdc_srcAddr+1
+
+	lda	vdc_srcAddr
+	sec
+	sbc 	#<80	;substract divisor to see if it fits in
+	tay	        ;lb result -> Y, for we may need it later
+	lda 	vdc_srcAddr+1
+	sbc 	#>80
+	bcc 	@aes_	;if carry=0 then divisor didn't fit in yet
+
+	sta	vdc_srcAddr+1	;else save substraction result as new remainder,
+	sty	vdc_srcAddr
+	inc	vdc_srcAddr+2	;and INCrement result cause divisor fit in 1 times
+
+@aes_:	dex
+	bne	@ael_
+
+	; vdc_updateAddr+2 is scan line here
+	; vdc_updateAddr(+1) is remainder
+
+	lda	vdc_srcAddr
+	sta	vdc_remainder
+	lda	vdc_srcAddr+1
+	sta	vdc_remainder+1
+
+	asl	vdc_remainder
+	rol	vdc_remainder+1
+	asl	vdc_remainder
+	rol	vdc_remainder+1
+	asl	vdc_remainder
+	rol	vdc_remainder+1
+
+	;
+	lda	vdc_srcAddr+2
+	and	#%00000111
+	sta	vdc_srcAddr+3
+	lda	vdc_srcAddr+2
+	and	#%11111000
+	sta	vdc_srcAddr+1
+
+	; mult by 80
+	lda	#0
+	lsr	vdc_srcAddr+1
+	ror
+	lsr 	vdc_srcAddr+1
+	ror
+	sta 	vdc_srcAddr
+	ldx	vdc_srcAddr+1
+	stx	vdc_srcAddr+2
+	lsr 	vdc_srcAddr+1
+	ror
+	lsr 	vdc_srcAddr+1
+	ror
+	clc
+	adc 	vdc_srcAddr
+	sta 	vdc_srcAddr
+	lda	vdc_srcAddr+2
+	adc	vdc_srcAddr+1
+	sta	vdc_srcAddr+1
+	bcc	@aes2_
+	inc 	vdc_srcAddr+1
+@aes2_:
+
+	; add line offset
+	lda	vdc_srcAddr
+	clc
+	adc	vdc_srcAddr+3
+	sta	vdc_srcAddr
+	bcc	@aes3_
+	inc	vdc_srcAddr+1
+@aes3_:
+	lda	vdc_srcAddr
+	clc
+	adc	vdc_remainder
+	sta	vdc_srcAddr
+	lda	vdc_srcAddr+1
+	adc	vdc_remainder+1
+	sta	vdc_srcAddr+1
+
+	;ldz	#$10
+	;stz 	vdc_updateAddr
+	;ldz 	#$01
+	;stz 	vdc_updateAddr+1
+	ldz 	#$04
+	stz 	vdc_srcAddr+2
+	ldz	#$00
+	stz 	vdc_srcAddr+3
+
+	rts
 
 vdc_ensureAddr:
 	; if recalc is needed, div updateOffset by 640
@@ -225,7 +394,6 @@ vdc_ensureAddr:
 @eae:
 	rts
 
-
 vdc_advanceAddr:
 	; increment VDC offset
 	inc	vdc_updateOffset
@@ -252,8 +420,26 @@ vdc_advanceAddr:
 
 	rts
 
+vdc_advanceSrcAddr:
+	; increment VDC offset
+	inc	vdc_sourceOffset
+	bne	@aa1_
+	inc	vdc_sourceOffset+1
+@aa1_:
+	; increment VIC address
+	lda	<vdc_srcAddr
+	clc
+	adc	#8
+	sta	<vdc_srcAddr
+	bcc	@aa2_
+	inc	<vdc_srcAddr+1
+@aa2_:
+
+	rts
+
 
 vdc_updateOffset:	.word 0
+vdc_sourceOffset:	.word 0
 vdc_updateNeeded:	.byte 1
 vdc_lastReg:		.byte 0
 vdc_result:		.byte 0
