@@ -513,6 +513,7 @@ begin  -- behavioural
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
 	    reg_vdc_status_reset <= '1';
             if hypervisor_mode='0' then
+	      reg_vdc_reg_write <= reg_vdc_reg;
               hyper_trap_vdc_data_read <= '1';
             end if;
           else
