@@ -29,13 +29,11 @@ vdc_reg_write:
 	lda	#$80
 @rw1:
 	sta	$D627
-	;inc	$D020
         sta	hypervisor_enterexit_trigger
 
 
 vdc_data_write:
-
-	lda	$D625
+	lda	$D628
 	cmp	#$12
 	bne	@1
 	lda	$D626

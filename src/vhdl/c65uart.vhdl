@@ -229,6 +229,7 @@ architecture behavioural of c65uart is
   signal reg_vdc_status : std_logic_vector(7 downto 0) := x"00";
   signal reg_vdc_status_reset : std_logic := '1';
   signal virtual_vdc_enable : std_logic := '1';
+  signal reg_vdc_reg_write : std_logic_vector(7 downto 0) := x"00";
   
 begin  -- behavioural
   
@@ -391,6 +392,7 @@ begin  -- behavioural
 	      reg_vdc_status <= x"00";
               if hypervisor_mode='0' then
                 hyper_trap_vdc_data <= '1';
+		reg_vdc_reg_write <= reg_vdc_reg;
               end if;
             end if;
           when x"02" =>
@@ -480,6 +482,8 @@ begin  -- behavioural
           when x"27" =>
             -- @IO:GS $D627 VDC emulation, holds the opeartion status returned when reading $D601
             reg_vdc_status <= std_logic_vector(fastio_wdata);
+	  when x"28" =>
+	    reg_vdc_reg_write <= std_logic_vector(fastio_wdata);
           when others => null;
         end case;
       end if;
@@ -701,6 +705,8 @@ begin  -- behavioural
         when x"27" =>
           -- @IO:GS $D627 VDC emulation, status registers as returned by reading $D600
           fastio_rdata(7 downto 0) <= unsigned(reg_vdc_status);
+        when x"28" =>
+	  fastio_rdata(7 downto 0) <= unsigned(reg_vdc_reg_write);
         when others =>
           report "Reading untied register, result = Z";
           fastio_rdata <= (others => 'Z');
