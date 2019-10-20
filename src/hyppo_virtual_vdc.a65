@@ -25,10 +25,6 @@ vdc_reg_write:
 	EOM
 	lda	(<vdc_updateAddr), Z
 	sta	$D626
-	lda	vdc_updateAddr
-	sta	$D629
-	lda	vdc_updateAddr+1
-	sta	$D62A
 @rw2:
 	lda	#$80
 @rw1:
@@ -413,10 +409,6 @@ vdc_advanceAddr:
 	EOM
 	lda	(<vdc_updateAddr), Z
 	sta	$D626
-	lda	vdc_updateAddr
-	sta	$D629
-	lda	vdc_updateAddr+1
-	sta	$D62A
 
 	rts
 
