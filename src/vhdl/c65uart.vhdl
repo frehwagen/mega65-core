@@ -227,6 +227,7 @@ architecture behavioural of c65uart is
   signal reg_vdc_reg : std_logic_vector(7 downto 0) := x"00";
   signal reg_vdc_data : std_logic_vector(7 downto 0) := x"00";
   signal reg_vdc_status : std_logic_vector(7 downto 0) := x"00";
+  signal reg_vdc_status_reset : std_logic := '1';
   signal virtual_vdc_enable : std_logic := '1';
   
 begin  -- behavioural
@@ -260,8 +261,11 @@ begin  -- behavioural
     register_number(7 downto 6) := "00";
     register_number(5 downto 0) := fastio_address(5 downto 0);
     
+    reg_vdc_status <= reg_vdc_status_w;
+
     if rising_edge(cpuclock) then
 
+      
       -- Monitor OSK toggle key input for MEGAphone, and cycle through the
       -- various OSK states (off, bottom and top position).
       last_osk_toggle_key <= osk_toggle_key;
@@ -505,7 +509,7 @@ begin  -- behavioural
           -- @IO:C65 $D601.3 UART:FRMERR UART RX framing error flag (clear by reading \$D600)
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
-	    -- reg_vdc_status <= "00000000";
+	    reg_vdc_status_reset <= '1';
             if hypervisor_mode='0' then
               hyper_trap_vdc_data_read <= '1';
             end if;
@@ -709,6 +713,11 @@ begin  -- behavioural
         
     if rising_edge(pixelclock) then
 
+      if reg_vdc_status_reset='1' then
+	reg_vdc_status <= "00000000";
+	reg_vdc_status_reset <= '0';
+      end if;
+      
       if rx_clear_flags='1' then
         -- Clear byte read flag
         reg_status0_rx_full <= '0';
