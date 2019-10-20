@@ -512,10 +512,10 @@ begin  -- behavioural
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
 	    reg_vdc_status_reset <= '1';
-            if hypervisor_mode='0' then
+            --if hypervisor_mode='0' then
 	      reg_vdc_reg_write <= reg_vdc_reg;
               hyper_trap_vdc_data_read <= '1';
-            end if;
+            --end if;
           else
             fastio_rdata(0) <= reg_status0_rx_full_drive;
             fastio_rdata(1) <= reg_status1_rx_overrun_drive;

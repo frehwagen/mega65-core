@@ -123,7 +123,7 @@ vdc_data_write:
 	lda	$D626
 	EOM
 	sta	(<vdc_updateAddr), Z
-	inc $D020
+	;inc $D020
 	jsr 	vdc_advanceAddr
 	lda #$80
         sta $D627
@@ -138,6 +138,11 @@ vdc_data_write:
 
 
 vdc_data_read:
+	inc	$D020
+	lda	$D627
+	bne	@r9a
+	inc	$D020
+@r9a:
 	lda	$D625
 	cmp 	#$1F
 	bne 	@r9
@@ -148,7 +153,7 @@ vdc_data_read:
 	lda	#$80
 	sta	$D627
 @r9:
-	lda #$80
+	lda #$00
 	sta $D627
 	;inc	$D020
 	sta	hypervisor_enterexit_trigger

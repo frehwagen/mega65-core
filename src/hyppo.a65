@@ -260,7 +260,7 @@ trap_entry_points:
 	jmp vdc_data_write		; Trap #$47 (VDC data write)
 	nop
 	
-	jmp vdc_data_write		; Trap #$48 (VDC data read)
+	jmp vdc_data_read		; Trap #$48 (VDC data read)
 	nop
 	
 	jmp nosuchtrap
