@@ -261,8 +261,6 @@ begin  -- behavioural
     register_number(7 downto 6) := "00";
     register_number(5 downto 0) := fastio_address(5 downto 0);
     
-    reg_vdc_status <= reg_vdc_status_w;
-
     if rising_edge(cpuclock) then
 
       
