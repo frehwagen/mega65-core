@@ -3308,7 +3308,6 @@ begin
         elsif hyper_trap_vdc_data_read='1' then 
             vdc_data_read_trap_pending <='1';
         end if;
-	reg_pc <= reg_pc;
       elsif (hyper_trap_pending = '0') then
         hyper_trap_state <= '1';
       end if;
@@ -4507,6 +4506,7 @@ begin
                                         -- Trap #66 ($42) = RESTORE key double-tap
                   hypervisor_trap_port <= "1000010";                     
                 end if;	
+		pc_inc := '0';
               else
                                         -- Normal instruction execution
                 state <= InstructionDecode;
