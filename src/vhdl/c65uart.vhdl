@@ -391,8 +391,9 @@ begin  -- behavioural
               reg_vdc_data <= std_logic_vector(fastio_wdata);
 	      reg_vdc_status <= x"00";
               if hypervisor_mode='0' then
-                hyper_trap_vdc_data <= '1';
-		reg_vdc_reg_write <= reg_vdc_reg;
+	        reg_vdc_status_reset <= '1';
+                -- hyper_trap_vdc_data <= '1';
+		-- reg_vdc_reg_write <= reg_vdc_reg;
               end if;
             end if;
           when x"02" =>

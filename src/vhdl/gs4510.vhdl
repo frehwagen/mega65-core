@@ -4496,12 +4496,12 @@ begin
                   vdc_reg_trap_pending <= '0';
                 elsif vdc_data_trap_pending = '1' then
                                         -- Trap #71 ($47) = VDC data write
-                  hypervisor_trap_port <= "1001000";
+                  hypervisor_trap_port <= "1000111";
                   vdc_data_trap_pending <= '0';
                 elsif vdc_data_read_trap_pending = '1' then
                                           -- Trap #72 ($48) = VDC data read
-                    hypervisor_trap_port <= "1000111";
-                    vdc_data_read_trap_pending <= '0';
+                  hypervisor_trap_port <= "1001000";
+                  vdc_data_read_trap_pending <= '0';
                 else
                                         -- Trap #66 ($42) = RESTORE key double-tap
                   hypervisor_trap_port <= "1000010";                     
