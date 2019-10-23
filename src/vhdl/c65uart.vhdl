@@ -365,6 +365,13 @@ begin  -- behavioural
         end if;
       end loop;
       
+      if reg_vdc_status_reset='1' then
+        reg_vdc_reg_write <= reg_vdc_reg;
+        hyper_trap_vdc_data_read <= '1';
+        reg_vdc_status <= "00000000";
+        reg_vdc_status_reset <= '0';
+      end if;
+
       if ( hypervisor_mode='1' ) Then
         hyper_trap_vdc_reg <= '0';
 	hyper_trap_vdc_data <= '0';
@@ -718,13 +725,6 @@ begin  -- behavioural
     end if;    
         
     if rising_edge(pixelclock) then
-
-      if reg_vdc_status_reset='1' then
-        reg_vdc_reg_write <= reg_vdc_reg;
-        hyper_trap_vdc_data_read <= '1';
-        reg_vdc_status <= "00000000";
-        reg_vdc_status_reset <= '0';
-      end if;
       
       if rx_clear_flags='1' then
         -- Clear byte read flag
