@@ -369,7 +369,7 @@ begin  -- behavioural
         -- reg_vdc_reg_write <= reg_vdc_reg;
         hyper_trap_vdc_data_read <= '1';
         -- reg_vdc_status <= "00000000";
-        -- reg_vdc_status_reset <= '0';
+        reg_vdc_status_reset <= '0';
       end if;
 
       if ( hypervisor_mode='1' ) Then
