@@ -365,12 +365,12 @@ begin  -- behavioural
         end if;
       end loop;
       
-      -- if reg_vdc_status_reset='1' then
+      if reg_vdc_status_reset='1' then
         -- reg_vdc_reg_write <= reg_vdc_reg;
-        -- hyper_trap_vdc_data_read <= '1';
+        hyper_trap_vdc_data_read <= '1';
         -- reg_vdc_status <= "00000000";
         -- reg_vdc_status_reset <= '0';
-      -- end if;
+      end if;
 
       if ( hypervisor_mode='1' ) Then
         hyper_trap_vdc_reg <= '0';
@@ -519,11 +519,11 @@ begin  -- behavioural
           -- @IO:C65 $D601.3 UART:FRMERR UART RX framing error flag (clear by reading \$D600)
           if virtual_vdc_enable='1' then
             fastio_rdata <= unsigned(reg_vdc_data(7 downto 0));
-	    --reg_vdc_status_reset <= '1';
-            if hypervisor_mode='0' then
+	    reg_vdc_status_reset <= '1';
+            --if hypervisor_mode='0' then
 	      --reg_vdc_reg_write <= reg_vdc_reg;
-              hyper_trap_vdc_data_read <= '1';
-            end if;
+              --hyper_trap_vdc_data_read <= '1';
+            --end if;
           else
             fastio_rdata(0) <= reg_status0_rx_full_drive;
             fastio_rdata(1) <= reg_status1_rx_overrun_drive;
