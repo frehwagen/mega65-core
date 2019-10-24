@@ -499,6 +499,7 @@ begin  -- behavioural
     
     -- make sure this doesn't infer a latch
     fastio_rdata <= (others => 'Z');
+    reg_vdc_status_reset <= '0';
     
     -- Reading of registers
     if (fastio_read='1') and (c65uart_cs='1') then
