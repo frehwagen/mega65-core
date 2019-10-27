@@ -1,5 +1,4 @@
 vdc_reg_write:
-
 	lda	#$00
 	ldz	$D625
 	cpz	#$12
@@ -138,11 +137,11 @@ vdc_data_write:
 
 
 vdc_data_read:
-	inc	$D020
-	lda	$D627
-	bne	@r9a
-	inc	$D020
-@r9a:
+	;inc	$D020
+	;lda	$D627
+	;bne	@r9a
+	;inc	$D020
+;@r9a:
 	lda	$D625
 	cmp 	#$1F
 	bne 	@r9
@@ -153,7 +152,7 @@ vdc_data_read:
 	lda	#$80
 	sta	$D627
 @r9:
-	lda #$00
+	lda #$80
 	sta $D627
 	;inc	$D020
 	sta	hypervisor_enterexit_trigger
