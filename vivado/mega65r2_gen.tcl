@@ -928,7 +928,8 @@ if { $obj != "" } {
 set obj [get_runs synth_1]
 set_property -name "needs_refresh" -value "1" -objects $obj
 set_property -name "part" -value "xc7a100tfgg484-1" -objects $obj
-set_property -name "strategy" -value "Vivado Synthesis Defaults" -objects $obj
+set_property -name "strategy" -value "Flow_PerfOptimized_high" -objects $obj
+set_property STEPS.SYNTH_DESIGN.ARGS.RETIMING on [get_runs synth_1]
 
 # set the current synth run
 current_run -synthesis [get_runs synth_1]
@@ -1115,10 +1116,9 @@ if { $obj != "" } {
 set obj [get_runs impl_1]
 set_property -name "needs_refresh" -value "1" -objects $obj
 set_property -name "part" -value "xc7a100tfgg484-1" -objects $obj
-set_property -name "strategy" -value "Vivado Implementation Defaults" -objects $obj
+set_property -name "strategy" -value "Performance_ExplorePostRoutePhysOpt" -objects $obj
 set_property -name "steps.write_bitstream.args.readback_file" -value "0" -objects $obj
 set_property -name "steps.write_bitstream.args.verbose" -value "0" -objects $obj
-
 set_property STEPS.POST_ROUTE_PHYS_OPT_DESIGN.ARGS.DIRECTIVE AggressiveExplore [get_runs impl_1]
 
 # set the current impl run
