@@ -910,7 +910,7 @@ set_property -name "top" -value "unknown" -objects $obj
 if {[string equal [get_runs -quiet synth_1] ""]} {
     create_run -name synth_1 -part xc7a100tfgg484-1 -flow {Vivado Synthesis 2017} -strategy "Vivado Synthesis Defaults" -report_strategy {No Reports} -constrset constrs_1
 } else {
-  set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs synth_1]
+  set_property strategy Flow_PerfOptimized_high [get_runs synth_1]
   set_property flow "Vivado Synthesis 2017" [get_runs synth_1]
 }
 set obj [get_runs synth_1]
@@ -937,7 +937,7 @@ current_run -synthesis [get_runs synth_1]
 if {[string equal [get_runs -quiet impl_1] ""]} {
     create_run -name impl_1 -part xc7a100tfgg484-1 -flow {Vivado Implementation 2017} -strategy "Vivado Implementation Defaults" -report_strategy {No Reports} -constrset constrs_1 -parent_run synth_1
 } else {
-  set_property strategy "Vivado Implementation Defaults" [get_runs impl_1]
+  set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
   set_property flow "Vivado Implementation 2017" [get_runs impl_1]
 }
 set obj [get_runs impl_1]
