@@ -7,7 +7,7 @@
 ### part boundary scan information.
 ### monitor_load:hint:part:xc7a100tfgg484
 
-#################################
+################################
 ## TIMING CONSTRAINTS
 ################################
 
@@ -21,23 +21,23 @@ create_generated_clock -name clock81p [get_pins clocks1/mmcm_adv0/CLKOUT2]
 create_generated_clock -name clock41  [get_pins clocks1/mmcm_adv0/CLKOUT3]
 create_generated_clock -name clock27  [get_pins clocks1/mmcm_adv0/CLKOUT4]
 create_generated_clock -name clock163 [get_pins clocks1/mmcm_adv0/CLKOUT5]
-#create_generated_clock -name clock270 [get_pins clocks1/mmcm_adv0/CLKOUT6]
+create_generated_clock -name clock270 [get_pins clocks1/mmcm_adv0/CLKOUT6]
 
 create_generated_clock -name clock50  [get_pins clocks1/mmcm_adv1_eth/CLKOUT1]
 create_generated_clock -name clock200 [get_pins clocks1/mmcm_adv1_eth/CLKOUT2]
 
-#create_generated_clock -name clock60  [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1]
+create_generated_clock -name clock60  [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1]
 
 # For timing analysis, we approximate the audio clock with a frequency of 60/4 = 15 MHz.
 # This is slightly over-constraining the design, but the difference is small enough to
 # not cause timing violations.
-#create_generated_clock -name clock12p228 -source [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1] -divide_by 4 [get_pins AUDIO_TONE/CLOCK/clk_u_reg/Q]
+create_generated_clock -name clock12p228 -source [get_pins AUDIO_TONE/CLOCK/MMCM/CLKOUT1] -divide_by 4 [get_pins AUDIO_TONE/CLOCK/clk_u_reg/Q]
 
-#create_generated_clock -name clock1      -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 41 [get_pins m0.machine0/pixel0/phi_1mhz_ubuf_reg/Q]
-#create_generated_clock -name clock2      -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 20 [get_pins m0.machine0/pixel0/phi_2mhz_ubuf_reg/Q]
-#create_generated_clock -name clock3p5    -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 10 [get_pins m0.machine0/pixel0/phi_3mhz_ubuf_reg/Q]
+create_generated_clock -name clock1      -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 41 [get_pins m0.machine0/pixel0/phi_1mhz_ubuf_reg/Q]
+create_generated_clock -name clock2      -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 20 [get_pins m0.machine0/pixel0/phi_2mhz_ubuf_reg/Q]
+create_generated_clock -name clock3p5    -source [get_pins clocks1/mmcm_adv0/CLKOUT3]     -divide_by 10 [get_pins m0.machine0/pixel0/phi_3mhz_ubuf_reg/Q]
 
-#set_false_path -from [get_clocks clock41] -to [get_clocks clock1]
+set_false_path -from [get_clocks clock41] -to [get_clocks clock1]
 
 # TODO: These cause massive timing errors.
 #set_input_delay -clock [get_clocks clock50] -max 15 [get_ports {eth_rxd[1] eth_rxd[0]}]
@@ -55,8 +55,8 @@ set_false_path -from [get_clocks clock163] -to [get_clocks clock325]
 #set_false_path -from [get_clocks cpuclock] -to [get_clocks clk_u]
 #set_false_path -from [get_clocks vdac_clk_OBUF] -to [get_clocks ethclock]
 ## Fix 12.288MHz clock generation clock domain crossing
-#set_false_path -from [get_clocks clock41] -to [get_clocks clock60]
-#set_false_path -from [get_clocks clock41] -to [get_clocks clock12p228]
+set_false_path -from [get_clocks clock41] -to [get_clocks clock60]
+set_false_path -from [get_clocks clock41] -to [get_clocks clock12p228]
 
 ## Make Ethernet clocks unrelated to other clocks to avoid erroneous timing
 ## violations, and hopefully make everything synthesise faster.
@@ -368,24 +368,24 @@ set_property -dict {PACKAGE_PIN B22  IOSTANDARD LVCMOS33 PULLUP FALSE} [get_port
 set_property -dict {PACKAGE_PIN C22  IOSTANDARD LVCMOS33 PULLUP FALSE} [get_ports hr_cs0]
 
 ## Pmod Header P1
-#set_property -dict { PACKAGE_PIN F1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[0]}]
-#set_property -dict { PACKAGE_PIN D1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[1]}]
-#set_property -dict { PACKAGE_PIN B2  IOSTANDARD LVCMOS33 } [get_ports {p1lo[2]}]
-#set_property -dict { PACKAGE_PIN A1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[3]}]
-#set_property -dict { PACKAGE_PIN G1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[0]}]
-#set_property -dict { PACKAGE_PIN E1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[1]}]
-#set_property -dict { PACKAGE_PIN C2  IOSTANDARD LVCMOS33 } [get_ports {p1hi[2]}]
-#set_property -dict { PACKAGE_PIN B1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[3]}]
+set_property -dict { PACKAGE_PIN F1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[0]}]
+set_property -dict { PACKAGE_PIN D1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[1]}]
+set_property -dict { PACKAGE_PIN B2  IOSTANDARD LVCMOS33 } [get_ports {p1lo[2]}]
+set_property -dict { PACKAGE_PIN A1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[3]}]
+set_property -dict { PACKAGE_PIN G1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[0]}]
+set_property -dict { PACKAGE_PIN E1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[1]}]
+set_property -dict { PACKAGE_PIN C2  IOSTANDARD LVCMOS33 } [get_ports {p1hi[2]}]
+set_property -dict { PACKAGE_PIN B1  IOSTANDARD LVCMOS33 } [get_ports {p1hi[3]}]
 
 ## Pmod Header P2
-#set_property -dict { PACKAGE_PIN F3  IOSTANDARD LVCMOS33 } [get_ports {p2lo[0]}]
-#set_property -dict { PACKAGE_PIN E3  IOSTANDARD LVCMOS33 } [get_ports {p2lo[1]}]
-#set_property -dict { PACKAGE_PIN H4  IOSTANDARD LVCMOS33 } [get_ports {p2lo[2]}]
-#set_property -dict { PACKAGE_PIN H5  IOSTANDARD LVCMOS33 } [get_ports {p2lo[3]}]
-#set_property -dict { PACKAGE_PIN E2  IOSTANDARD LVCMOS33 } [get_ports {p2hi[0]}]
-#set_property -dict { PACKAGE_PIN D2  IOSTANDARD LVCMOS33 } [get_ports {p2hi[1]}]
-#set_property -dict { PACKAGE_PIN G4  IOSTANDARD LVCMOS33 } [get_ports {p2hi[2]}]
-#set_property -dict { PACKAGE_PIN J5  IOSTANDARD LVCMOS33 } [get_ports {p2hi[3]}]
+set_property -dict { PACKAGE_PIN F3  IOSTANDARD LVCMOS33 } [get_ports {p2lo[0]}]
+set_property -dict { PACKAGE_PIN E3  IOSTANDARD LVCMOS33 } [get_ports {p2lo[1]}]
+set_property -dict { PACKAGE_PIN H4  IOSTANDARD LVCMOS33 } [get_ports {p2lo[2]}]
+set_property -dict { PACKAGE_PIN H5  IOSTANDARD LVCMOS33 } [get_ports {p2lo[3]}]
+set_property -dict { PACKAGE_PIN E2  IOSTANDARD LVCMOS33 } [get_ports {p2hi[0]}]
+set_property -dict { PACKAGE_PIN D2  IOSTANDARD LVCMOS33 } [get_ports {p2hi[1]}]
+set_property -dict { PACKAGE_PIN G4  IOSTANDARD LVCMOS33 } [get_ports {p2hi[2]}]
+set_property -dict { PACKAGE_PIN J5  IOSTANDARD LVCMOS33 } [get_ports {p2hi[3]}]
 
 
 ## Hyper RAM on trap-door PMOD
@@ -473,7 +473,6 @@ set_property -dict {PACKAGE_PIN N2   IOSTANDARD LVCMOS33} [get_ports f_track0]
 set_property -dict {PACKAGE_PIN P2   IOSTANDARD LVCMOS33} [get_ports f_writeprotect]
 set_property -dict {PACKAGE_PIN P1   IOSTANDARD LVCMOS33} [get_ports f_rdata]
 set_property -dict {PACKAGE_PIN R1   IOSTANDARD LVCMOS33} [get_ports f_diskchanged]
-
 
 ################################
 # neoTRNG properties
