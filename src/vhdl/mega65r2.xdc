@@ -366,6 +366,10 @@ set_property -dict {PACKAGE_PIN E22  IOSTANDARD LVCMOS33 PULLUP FALSE SLEW FAST 
 set_property -dict {PACKAGE_PIN B21  IOSTANDARD LVCMOS33 PULLUP FALSE SLEW FAST DRIVE 16} [get_ports hr_rwds]
 set_property -dict {PACKAGE_PIN B22  IOSTANDARD LVCMOS33 PULLUP FALSE} [get_ports hr_reset]
 set_property -dict {PACKAGE_PIN C22  IOSTANDARD LVCMOS33 PULLUP FALSE} [get_ports hr_cs0]
+# Place HyperRAM close to I/O pins
+create_pblock pblock_hyperram
+add_cells_to_pblock pblock_hyperram [get_cells [list hyperram0]]
+resize_pblock pblock_hyperram -add {SLICE_X0Y135:SLICE_X35Y179}
 
 ## Pmod Header P1
 set_property -dict { PACKAGE_PIN F1  IOSTANDARD LVCMOS33 } [get_ports {p1lo[0]}]
