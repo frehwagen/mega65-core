@@ -150,7 +150,8 @@ UTILITIES=	$(UTILDIR)/etherload.prg \
 		$(UTILDIR)/vfpgatest.prg \
 		$(UTILDIR)/sdbitbash.prg \
 		d81-files/* \
-		$(UTILDIR)/diskmenu.prg
+		$(UTILDIR)/diskmenu.prg \
+		$(UTILDIR)/hyperramtest.prg
 
 TOOLDIR=	$(SRCDIR)/tools
 TOOLS=	$(TOOLDIR)/etherhyppo/etherhyppo \
