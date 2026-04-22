@@ -557,7 +557,7 @@ begin
       read_request => expansionram_read,
       write_request => expansionram_write,
       rdata => expansionram_rdata,
-      data_ready_toggle_out => expansionram_data_ready_toggle,
+      data_ready_strobe => expansionram_data_ready_toggle,
       busy => expansionram_busy,
 
       current_cache_line => current_cache_line,
