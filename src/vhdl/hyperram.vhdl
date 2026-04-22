@@ -17,7 +17,7 @@ use work.cputypes.all;
 
 entity hyperram is
   generic ( in_simulation : in boolean := false;
-            no_start_delay : in boolean := false);
+            no_start_delay : in boolean := true);
   Port ( pixelclock : in STD_LOGIC; -- For slow devices bus interface is
          -- actually on pixelclock to reduce latencies
          -- Also pixelclock is the natural clock speed we apply to the HyperRAM.
