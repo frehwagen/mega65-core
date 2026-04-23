@@ -467,11 +467,13 @@ begin
                 & ", last write addr $" & to_hexstring(last_expansionram_write_address);
               if slow_access_address = last_expansionram_write_address then
                 report "CACHE: Reading last-written byte $" & to_hexstring(last_expansionram_write_data);
-                slow_access_rdata <= last_expansionram_write_data;
+                slow_access_rdata <= x"AA";
+                -- last_expansionram_write_data;
               else
                 report "CACHE: Reading byte $" & to_hexstring(expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0))))
                   & " from exposed hyperram current cache line";
-                slow_access_rdata <= expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0)));
+                slow_access_rdata <= x"BB";
+                -- expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0)));
               end if;
               state <= Idle;
 
@@ -606,7 +608,8 @@ begin
         last_expansionram_data_ready_toggle_sample <= expansionram_data_ready_toggle;
         report "Saw data. Switching back to Idle state. byte = $" & to_hexstring(expansionram_rdata);
         state <= Idle;
-        slow_access_rdata <= expansionram_rdata;
+        slow_access_rdata <= x"FF";
+        --expansionram_rdata;
         report "PUBLISH: Expansion RAM completion of read";
         slow_access_ready_toggle <= slow_access_request_toggle;
 
