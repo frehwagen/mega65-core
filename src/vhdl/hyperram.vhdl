@@ -1547,7 +1547,8 @@ begin
         data_ready_strobe <= fake_data_ready_strobe;
         if fake_data_ready_strobe='1' then
           report "DISPATCH: holding data_ready_strobe via fake data = $" & to_hstring(fake_rdata);
-          rdata <= fake_rdata;
+          rdata <= x"FF";
+          --fake_rdata;
           rdata_hi <= fake_rdata_hi;
         end if;
       else
@@ -3137,7 +3138,8 @@ begin
                     read_request_delatch <= '1';
                     data_ready_strobe <= '1';
                     data_ready_strobe_hold <= '1';
-                    rdata <= block_data(to_integer(address(4 downto 3)))(to_integer(address(2 downto 0)));
+                    rdata <= x"AA";
+                    -- block_data(to_integer(address(4 downto 3)))(to_integer(address(2 downto 0)));
                     if rdata_16en='1' then
                       rdata_hi <= block_data(to_integer(address(4 downto 3)))(to_integer(address(2 downto 0))+1);
                     end if;
@@ -3318,7 +3320,8 @@ begin
                 if rdata_16en='1' and byte_phase(0)='1' then
                   rdata_hi <= hr_d;
                 else
-                  rdata <= hr_d;
+                  rdata <= x"BB";
+                  -- hr_d;
                 end if;
               else
                 report "DISPATCH: Returning freshly read data = $" & to_hstring(hr2_d)
@@ -3552,7 +3555,8 @@ begin
               if byte_phase = hyperram_access_address_read_time_adjusted and (not is_vic_fetch) then
                 if hyperram0_select='1' then
                   report "DISPATCH: Returning freshly read data = $" & to_hstring(hr_d);
-                  rdata <= hr_d;
+                  rdata <= x"EE";
+                  -- hr_d;
                 else
                   report "DISPATCH: Returning freshly read data = $" & to_hstring(hr2_d)
                     & ", byte_phase=" & integer'image(to_integer(byte_phase));
