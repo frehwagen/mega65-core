@@ -3196,11 +3196,13 @@ begin
           return unsigned(hyppo_rdata);
         when SlowRAM =>
           report "reading slow RAM data. Word is $" & to_hstring(slow_access_rdata) severity note;
-          return unsigned(slow_access_rdata);
+          return x"11";
+          --unsigned(slow_access_rdata);
         when SlowRAMPreFetch =>
           report "reading slow prefetched RAM data. byte is $" & to_hstring(slow_prefetch_data) severity note;
           report "(last CACHE byte read is $" & to_hexstring(cache_line_last_data_read) & ")";
-          return unsigned(slow_prefetch_data);
+          return x"22";
+          --unsigned(slow_prefetch_data);
         when Unmapped =>
           report "accessing unmapped memory" severity note;
           return x"A0";                     -- make unmmapped memory obvious
