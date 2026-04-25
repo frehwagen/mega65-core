@@ -546,6 +546,7 @@ begin
         opl_we <= '0';
         state <= Idle;
       when ExpansionRAMRequest =>
+          slow_access_rdata <= x"FA";
           if expansionram_eternally_busy='1' then
             -- Unmapped address space: Content = "ExtraRAM"
             case to_integer(slow_access_address(2 downto 0)) is
