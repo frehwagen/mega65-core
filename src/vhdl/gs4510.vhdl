@@ -2401,62 +2401,11 @@ begin
         slow_access_data_ready <= '0';
         slow_access_address_drive <= long_address(27 downto 0);
         slow_access_write_drive <= '0';
-        if long_address(26 downto 3) = slowram_cache_line_addr(26 downto 3)
-          and (slowram_cache_line_valid = '1')
-          and (slow_cache_enable='1') then
-          report "CACHE: Cache line valid and hit: Offset = " & integer'image(to_integer(long_address(2 downto 0)));
-          for i in 0 to 7 loop
-            report "CACHE BYTE " & integer'image(i) & " = $" & to_hexstring(slowram_cache_line(i));
-          end loop;
-          report "slow_prefetch_data set";
-          slow_prefetch_data <= slowram_cache_line(to_integer(long_address(2 downto 0)));
-          cache_line_last_data_read <= slowram_cache_line(to_integer(long_address(2 downto 0)));
-          report "CACHE: Read byte is $" & to_hexstring(slowram_cache_line(to_integer(long_address(2 downto 0))));
-          cache_line_reads <= cache_line_reads + 1;
-          wait_states <= x"00";
-          wait_states_non_zero <= '0';
-          proceed <= '1';
-          accessing_slowram <= '0';
-          read_source <= SlowRAMPreFetch;
-          mem_reading <= '1';
-          prev_cache_read <= long_address(2 downto 0);
-          if slow_cache_advance_enable = '1' then
-            if prev_cache_read="110" and long_address(2 downto 0) = "111" then
-              -- Ask for next cache line if reading the last and in asending order
-              slowram_cache_line_inc_toggle <= not slowram_cache_line_inc_toggle_int;
-              slowram_cache_line_inc_toggle_int <= not slowram_cache_line_inc_toggle_int;
-            end if;
-            if prev_cache_read="001" and long_address(2 downto 0) = "000" then
-              -- Ask for next cache line if reading the first byte in descending
-              -- order
-              slowram_cache_line_dec_toggle <= not slowram_cache_line_dec_toggle_int;
-              slowram_cache_line_dec_toggle_int <= not slowram_cache_line_dec_toggle_int;
-            end if;
-          end if;
-        elsif long_address(26 downto 0) = slow_prefetched_address and slow_prefetch_enable='1' then
-          -- If the slow device interface has correctly guessed the next address
-          -- we want to read from, then use the presented value, and tell the slow
-          -- RAM that we used it, so that it can get the next one ready for us.
-          -- This allows faster linear reading of the slow device address
-          -- space, which is particularly helpful for accessing the HyperRAM.
-          -- XXX - On R4 at least, this just returns $FC for any pre-fetched byte???
-          -- (basically its a poor-man's version of the full line cache above)
-          accessing_slowram <= '0';
-          report "slow_prefetch_data set";
-          slow_prefetch_data <= slow_prefetched_data;
-          prefetch_read_count <= prefetch_read_count + 1;
-          wait_states <= x"00";
-          wait_states_non_zero <= '0';
-          proceed <= '1';
-          read_source <= SlowRAMPreFetch;
-          mem_reading <= '1';
-        else
-          slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
-          slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
-          wait_states <= x"FF";
-          wait_states_non_zero <= '1';
-          proceed <= '0';
-        end if;
+        slow_access_request_toggle_drive <= not slow_access_request_toggle_drive;
+        slow_access_desired_ready_toggle <= not slow_access_desired_ready_toggle;
+        wait_states <= x"FF";
+        wait_states_non_zero <= '1';
+        proceed <= '0';
       else
         -- Don't let unmapped memory jam things up
         report "hit unmapped memory -- clearing wait_states" severity note;
