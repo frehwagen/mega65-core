@@ -38,7 +38,7 @@ ENTITY slow_devices IS
     slow_access_write : in std_logic;
     slow_access_address : in unsigned(27 downto 0);
     slow_access_wdata : in unsigned(7 downto 0);
-    slow_access_rdata : out unsigned(7 downto 0);
+    slow_access_rdata : out unsigned(7 downto 0) := x"AB";
 
     -- Fast read interface for slow devices linear reading
     -- (only hyperram)
