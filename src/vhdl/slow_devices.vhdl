@@ -452,63 +452,8 @@ begin
               & to_hexstring(expansionram_current_cache_line(5)) & " "
               & to_hexstring(expansionram_current_cache_line(6)) & " "
               & to_hexstring(expansionram_current_cache_line(7)) & " ";
-            if expansionram_current_cache_line_valid='1' and
-              expansionram_current_cache_line_address(26 downto 3) = slow_access_address(26 downto 3) and
-              slow_access_write='0'
-            then
-              -- Read request for expansion RAM that can be serviced using the
-              -- exported cache line.
-
-              -- If we do a write to a region already in the current cache
-              -- line, we process it so quickly, that the value doesn't have
-              -- time to be updated. Thus we need to keep it on hand, return
-              -- the new value ourselves.
-              report "CACHE: slow_access_address = $" & to_hexstring(slow_access_address)
-                & ", last write addr $" & to_hexstring(last_expansionram_write_address);
-              if slow_access_address = last_expansionram_write_address then
-                report "CACHE: Reading last-written byte $" & to_hexstring(last_expansionram_write_data);
-                slow_access_rdata <= x"AA";
-                -- last_expansionram_write_data;
-              else
-                report "CACHE: Reading byte $" & to_hexstring(expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0))))
-                  & " from exposed hyperram current cache line";
-                slow_access_rdata <= x"BB";
-                -- expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0)));
-              end if;
-              state <= Idle;
-
-              report "PUBLISH: expansionram_current_cache_line read";
-              slow_access_ready_toggle <= slow_access_request_toggle;
-              -- If we are reading the last byte in the set we have, then tell
-              -- hyperram controller to present the next data, if possible.
-              if slow_access_address(2 downto 0) = "111" then
---                report "DISPATCHER: Requesting next 8 bytes";
-                expansionram_current_cache_line_next_toggle <= not expansionram_current_cache_line_next_toggle;
-              end if;
-
-              if slow_access_address(2 downto 0) /= "111" then
-                -- Present the NEXT byte via the fast interface to the CPU
-                report "PREFETCH: Presenting $" & to_hexstring(slow_access_address(26 downto 0) + 1)
-                  & " = $" & to_hexstring(expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0))+1))
-                  & " due to regular slow access read.";
-                slow_prefetched_address <= slow_access_address(26 downto 0) + 1;
-                slow_prefetched_data <= expansionram_current_cache_line(to_integer(slow_access_address(2 downto 0))+1);
-              else
-                -- XXX Ideally we should automatically present the next byte
-                -- when it becomes available, but it's probably not worth the
-                -- complexity for the small incremental benefit it would deliver.
-                null;
-              end if;
-
-            else
-              -- Neither HyperRAM nor SDRAM should take longer than this to
-              -- complete a transaction.
-              -- There is a bug in the SDRAM controller at least, that can
-              -- result in a timeout occurring, which has yet to be tracked down.
-              report "EXRAM-TIMEOUT: Reseting timeout to " & integer'image(to_integer(expansionram_read_timeout_default));
-              expansionram_read_timeout <= expansionram_read_timeout_default;
-              state <= ExpansionRAMRequest;
-            end if;
+            expansionram_read_timeout <= expansionram_read_timeout_default;
+            state <= ExpansionRAMRequest;
           elsif slow_access_address(26)='1' then
             -- $4000000-$7FFFFFF = cartridge port
             report "Preparing to access from C64 cartridge port";
