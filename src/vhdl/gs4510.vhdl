@@ -2389,7 +2389,8 @@ begin
             end if;
           end if;
         end if;                           -- $DXXXX
-      elsif (long_address(27) = '1' or long_address(26)='1') and hyper_protected_hardware(7)='0' then
+      elsif (long_address(27) = '1' or long_address(26)='1') then
+      -- and hyper_protected_hardware(7)='0' then
         -- @IO:GS $4000000 - $7FFFFFF SUMMARY:SLOWDEV Slow Device memory (64MB)
         -- @IO:GS $8000000 - $FEFFFFF SUMMARY:SLOWDEV Slow Device memory (127MB)
         -- (But not accessible in secure compartment)
@@ -3672,7 +3673,8 @@ begin
         else
           wait_states_non_zero <= '0';
         end if;
-      elsif (long_address(27) = '1' or long_address(26)='1') and hyper_protected_hardware(7)='0' then
+      elsif (long_address(27) = '1' or long_address(26)='1') then
+      -- and hyper_protected_hardware(7)='0' then
         report "writing to slow device memory..." severity note;
         -- (But not accessible in secure compartment)
         accessing_slowram <= '1';
