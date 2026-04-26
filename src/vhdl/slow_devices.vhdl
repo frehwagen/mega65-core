@@ -605,7 +605,8 @@ begin
         if cart_access_read_strobe = '1' then
           cart_access_request <= '0';
           report "PUBLISH: C64 cartridge port access complete";
-          slow_access_rdata <= cart_access_rdata;
+          slow_access_rdata <= x"AB";
+          -- cart_access_rdata;
           slow_access_ready_toggle <= slow_access_request_toggle;
           state <= Idle;
         end if;
